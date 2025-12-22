@@ -20,7 +20,7 @@ jobs:
           deno-version: v2.x
 
       - name: Install dependencies
-        run: deno cache --lock=deno.lock
+        run: deno cache --lock=deno.lock src/main.tsx
 
       - name: Build static site
         run: deno task build
