@@ -109,10 +109,6 @@ const App = ({
         const gridHelper = new THREE.GridHelper(10, 10);
         scene.add(gridHelper);
         
-        // Show the 3 axes using arrows with labels x, y, z
-        const axesHelper = new THREE.AxesHelper(10);
-        scene.add(axesHelper);
-
         // Create drag controls for the objects
         const dragControls = new DragControls(models, camera, renderer.domElement);
         const rotationSensitivity = 10; // The higher the faster the rotation
