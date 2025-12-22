@@ -19,7 +19,7 @@ const App = ({
         const modelPromises = [];
 
         const promise1 = new Promise((resolve) => {
-            loader.load( '/3dmodels/stick/stick2.glb', ( gltf: any ) => {
+            loader.load( `${import.meta.env.BASE_URL}/3dmodels/stick/stick2.glb`, ( gltf: any ) => {
                 const root = gltf.scene;
                 root.updateMatrixWorld();
                 root.position.set(1, 1, 0); // Adjust as needed
@@ -35,7 +35,7 @@ const App = ({
         modelPromises.push(promise1);
         
         const promise2 = new Promise((resolve) => {
-            loader.load( '/3dmodels/stick/stick1.glb', ( gltf: any ) => {
+            loader.load( `${import.meta.env.BASE_URL}/3dmodels/stick/stick1.glb`, ( gltf: any ) => {
                 const root = gltf.scene;
                 root.updateMatrixWorld();
                 root.position.set(-1, 1, 0); // Adjust as needed
