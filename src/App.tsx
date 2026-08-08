@@ -125,12 +125,11 @@ interface ExportData {
   version: 1;
   questionId: number | null;
   objects: SceneObjectData[];
-  subjectId?: string | null;
-  cameraAngle?: number | null;
+  cameraAngles?: Record<string, number>;
   camera?: { x: number; y: number; z: number; tx: number; ty: number; tz: number };
 }
 
-function parseExport(text: string): { state: SceneState; camera: ExportData['camera']; subjectId: string | null } {
+function parseExport(text: string): { state: SceneState; camera: ExportData['camera'] } {
   const data = JSON.parse(text) as Partial<ExportData>;
   if (!Array.isArray(data.objects)) throw new Error('Invalid scene JSON');
   const objects = data.objects.filter((o): o is SceneObjectData => {
@@ -162,7 +161,6 @@ function parseExport(text: string): { state: SceneState; camera: ExportData['cam
       objects,
     },
     camera,
-    subjectId: typeof data.subjectId === 'string' ? data.subjectId : null,
   };
 }
 
@@ -177,7 +175,7 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [rotateMode, setRotateMode] = useState(false);
   const [labelsVisible, setLabelsVisible] = useState(true);
-  const [debug, setDebug] = useState<DebugConfig>({ enabled: false, subjectId: null });
+  const [debug, setDebug] = useState<DebugConfig>({ enabled: false });
   const [cam, setCam] = useState<{ pos: THREE.Vector3; target: THREE.Vector3 } | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
 
@@ -244,18 +242,21 @@ export default function App() {
   const selectedObj = present.objects.find((o) => o.id === selectedId) ?? null;
   const persons = present.objects.filter((o) => MODEL_BY_KIND[o.kind].isPerson);
 
-  const angle = useMemo(() => {
-    const sub = present.objects.find((o) => o.id === debug.subjectId);
-    if (!sub || !cam) return null;
-    const fx = -Math.sin(sub.rotY);
-    const fz = -Math.cos(sub.rotY);
-    const mx = cam.target.x - cam.pos.x;
-    const mz = cam.target.z - cam.pos.z;
-    const len = Math.hypot(mx, mz);
-    if (len < 1e-6) return null;
-    const cosA = (fx * mx + fz * mz) / len;
-    return Math.round((Math.acos(Math.min(1, Math.max(-1, cosA))) * 180) / Math.PI);
-  }, [present.objects, debug.subjectId, cam]);
+  const cameraAngles = useMemo(() => {
+    if (!cam) return null;
+    const out: Record<string, number> = {};
+    for (const o of persons) {
+      const fx = -Math.sin(o.rotY);
+      const fz = -Math.cos(o.rotY);
+      const mx = cam.target.x - cam.pos.x;
+      const mz = cam.target.z - cam.pos.z;
+      const len = Math.hypot(mx, mz);
+      if (len < 1e-6) continue;
+      const cosA = (fx * mx + fz * mz) / len;
+      out[o.id] = Math.round((Math.acos(Math.min(1, Math.max(-1, cosA))) * 180) / Math.PI);
+    }
+    return out;
+  }, [persons, cam]);
 
   const addItem = (kind: KindId) => dispatch({ type: 'add', kind });
   const clearScene = () => dispatch({ type: 'clear' });
@@ -345,25 +346,11 @@ export default function App() {
 
   const downloadJSON = () => {
     const cam = controllerRef.current?.getCameraState() ?? null;
-    const sub = present.objects.find((o) => o.id === debug.subjectId);
-    let cameraAngle: number | null = null;
-    if (cam && sub) {
-      const fx = -Math.sin(sub.rotY);
-      const fz = -Math.cos(sub.rotY);
-      const mx = cam.target.x - cam.pos.x;
-      const mz = cam.target.z - cam.pos.z;
-      const len = Math.hypot(mx, mz);
-      if (len > 1e-6) {
-        const cosA = (fx * mx + fz * mz) / len;
-        cameraAngle = Math.round((Math.acos(Math.min(1, Math.max(-1, cosA))) * 180) / Math.PI);
-      }
-    }
     const data: ExportData = {
       version: 1,
       questionId: present.questionId,
       objects: present.objects,
-      subjectId: debug.subjectId,
-      cameraAngle,
+      cameraAngles: cameraAngles ?? undefined,
       ...(cam ? { camera: { x: cam.pos.x, y: cam.pos.y, z: cam.pos.z, tx: cam.target.x, ty: cam.target.y, tz: cam.target.z } } : {}),
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -381,7 +368,7 @@ export default function App() {
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        const { state, camera, subjectId } = parseExport(String(reader.result));
+        const { state, camera } = parseExport(String(reader.result));
         dispatch({ type: 'loadJSON', data: state });
         if (camera) {
           controllerRef.current?.setCameraState(
@@ -389,7 +376,6 @@ export default function App() {
             new THREE.Vector3(camera.tx, camera.ty, camera.tz),
           );
         }
-        setDebug((d) => ({ ...d, subjectId }));
       } catch {
         alert('JSONファイルを読み込めませんでした');
       }
@@ -535,26 +521,17 @@ export default function App() {
             />
             デバッグモード
           </label>
-          <p className="muted">青線=主語の向き、緑線=カメラの視線方向</p>
-          {debug.enabled && (
-            <>
-              <label className="row">
-                主語
-                <select
-                  value={debug.subjectId ?? ''}
-                  onChange={(e) => setDebug((d) => ({ ...d, subjectId: e.target.value || null }))}
-                >
-                  <option value="">--</option>
-                  {persons.map((o) => (
-                    <option key={o.id} value={o.id}>
-                      {MODEL_BY_KIND[o.kind].label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {angle !== null && <p className="angle">主語の向き vs カメラ: {angle}°</p>}
-            </>
-          )}
+          <p className="muted">青線=人物の向き、緑線=カメラの視線方向</p>
+          {debug.enabled &&
+            persons.map((o) => {
+              const a = cameraAngles?.[o.id];
+              if (a === undefined) return null;
+              return (
+                <p key={o.id} className="angle">
+                  {MODEL_BY_KIND[o.kind].label} の向き vs カメラ: {a}°
+                </p>
+              );
+            })}
         </section>
       </aside>
 

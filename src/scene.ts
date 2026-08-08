@@ -17,7 +17,6 @@ export interface SceneObjectData {
 
 export interface DebugConfig {
   enabled: boolean;
-  subjectId: string | null;
 }
 
 export interface SceneControllerCallbacks {
@@ -40,8 +39,8 @@ export function facingVector(rotY: number): THREE.Vector3 {
 function makeLabelSprite(text: string): THREE.Sprite {
   const canvas = document.createElement('canvas');
   const lines = text.split('\n');
-  const lineH = 90;
-  const pad = 24;
+  const lineH = 160;
+  const pad = 32;
   const W = 640;
   const H = pad * 2 + lineH * lines.length;
   canvas.width = W;
@@ -67,7 +66,7 @@ function makeLabelSprite(text: string): THREE.Sprite {
   const aspect = W / H;
   const w = 1.;
   sprite.scale.set(w, w / aspect, 1);
-  sprite.position.set(0, 2.85, 0);
+  sprite.position.set(0, 3., 0);
   return sprite;
 }
 
@@ -93,7 +92,7 @@ export class SceneController {
   private intersection = new THREE.Vector3();
   private mouse = new THREE.Vector2();
 
-  private debug: DebugConfig = { enabled: false, subjectId: null };
+  private debug: DebugConfig = { enabled: false };
   private selectedId: string | null = null;
   private rotateMode = false;
   private shiftHeld = false;
@@ -350,34 +349,33 @@ export class SceneController {
       (child.material as THREE.Material)?.dispose();
     }
     if (!this.debug.enabled) return;
-    const sub = this.debug.subjectId ? this.instances.get(this.debug.subjectId) : null;
-    if (!sub) return;
-
-    const p0 = new THREE.Vector3(sub.position.x, 0.03, sub.position.z);
-    const facing = facingVector(sub.userData.rotY ?? 0).multiplyScalar(2);
-    const p1 = p0.clone().add(facing);
-    this.lineGroup.add(
-      new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints([p0, p1]),
-        new THREE.LineBasicMaterial({ color: 0x2266ee }),
-      ),
-    );
 
     const camDir = new THREE.Vector3()
       .subVectors(this.orbit.target, this.camera.position)
       .setY(0)
       .normalize()
-      .multiplyScalar(2);
-    const p2 = new THREE.Vector3(this.camera.position.x, 0.03, this.camera.position.z).add(camDir);
+      .multiplyScalar(20);
+    const camStart = new THREE.Vector3(this.camera.position.x, 0.03, this.camera.position.z);
     this.lineGroup.add(
       new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints([
-          new THREE.Vector3(this.camera.position.x, 0.03, this.camera.position.z),
-          p2,
-        ]),
+        new THREE.BufferGeometry().setFromPoints([camStart, camStart.clone().add(camDir)]),
         new THREE.LineBasicMaterial({ color: 0x22aa44 }),
       ),
     );
+
+    for (const group of this.instances.values()) {
+      const kind = group.userData.kind as KindId;
+      if (!MODEL_BY_KIND[kind]?.isPerson) continue;
+      const p0 = new THREE.Vector3(group.position.x, 0.03, group.position.z);
+      const facing = facingVector(group.userData.rotY ?? 0).multiplyScalar(2);
+      const p1 = p0.clone().add(facing);
+      this.lineGroup.add(
+        new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints([p0, p1]),
+          new THREE.LineBasicMaterial({ color: 0x2266ee }),
+        ),
+      );
+    }
   }
 
   private onDragStart = (event: { object: THREE.Object3D }) => {
