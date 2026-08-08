@@ -1,7 +1,3 @@
-# AGENTS.md
-
-Guidance for AI agents working in this repository.
-
 ## Project
 
 Interactive 3D simulation web app.
