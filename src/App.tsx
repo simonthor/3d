@@ -553,7 +553,6 @@ export default function App() {
             />
             {t(lang, 'debugMode')}
           </label>
-          <p className="muted">{t(lang, 'debugLegend')}</p>
           {debug.enabled &&
             persons.map((o) => {
               const a = cameraAngles?.[o.id];
