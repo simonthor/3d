@@ -27,7 +27,7 @@ export interface SceneControllerCallbacks {
 
 const BOUND = 15;
 const MIN_Y = 0;
-const MAX_Y = 6;
+const MAX_Y = 3;
 const ROTATION_SENSITIVITY = 8;
 const CLICK_THRESHOLD = 6;
 
@@ -63,6 +63,7 @@ function makeLabelSprite(text: string): THREE.Sprite {
   tex.anisotropy = 4;
   const mat = new THREE.SpriteMaterial({ map: tex, transparent: true });
   const sprite = new THREE.Sprite(mat);
+  sprite.userData.text = text;
   const aspect = W / H;
   const w = 1.;
   sprite.scale.set(w, w / aspect, 1);
@@ -97,6 +98,7 @@ export class SceneController {
   private rotateMode = false;
   private shiftHeld = false;
   private labelsVisible = true;
+  private labelTexts = new Map<KindId, string>();
 
   private dragId: string | null = null;
   private dragMode: 'none' | 'ground' | 'free' | 'rotate' = 'none';
@@ -244,6 +246,13 @@ export class SceneController {
     }
   }
 
+  setLabelTexts(texts: Record<string, string>) {
+    this.labelTexts = new Map(Object.entries(texts) as [string, string][]);
+    for (const group of this.instances.values()) {
+      this.rebuildLabelSprite(group);
+    }
+  }
+
   resetCamera() {
     this.camera.position.set(0, 9, 12);
     this.orbit.target.set(0, 0, 0);
@@ -276,12 +285,7 @@ export class SceneController {
         }
       });
       group.add(clone);
-      const def = MODEL_BY_KIND[o.kind];
-      if (def.isPerson && def.labelText) {
-        group.userData.labelSprite = makeLabelSprite(def.labelText);
-        group.userData.labelSprite.visible = this.labelsVisible;
-        group.add(group.userData.labelSprite);
-      }
+      this.rebuildLabelSprite(group);
       this.scene.add(group);
       this.draggables.push(group);
       this.instances.set(o.id, group);
@@ -289,6 +293,26 @@ export class SceneController {
     this.applyTransform(group, o);
     this.updateSelectionRing();
     this.updateDebugLines();
+  }
+
+  private rebuildLabelSprite(group: THREE.Group) {
+    const kind = group.userData.kind as KindId;
+    const old = group.userData.labelSprite as THREE.Sprite | undefined;
+    if (old) {
+      group.remove(old);
+      (old.material as THREE.Material)?.dispose();
+      (old.material as THREE.SpriteMaterial)?.map?.dispose();
+    }
+    const def = MODEL_BY_KIND[kind];
+    const text = this.labelTexts.get(kind);
+    if (!def.isPerson || !text) {
+      group.userData.labelSprite = undefined;
+      return;
+    }
+    const sprite = makeLabelSprite(text);
+    sprite.visible = this.labelsVisible;
+    group.userData.labelSprite = sprite;
+    group.add(sprite);
   }
 
   private applyTransform(group: THREE.Group, o: SceneObjectData) {

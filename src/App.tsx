@@ -6,6 +6,8 @@ import type { DebugConfig, SceneObjectData } from './scene';
 import { CATEGORIES, MODEL_BY_KIND, MODEL_DEFS } from './models';
 import type { KindId } from './models';
 import { QUESTIONS } from './questions';
+import { CATEGORY_TEXT, KIND_TEXT, LANGS, facingVsCamera, t } from './i18n';
+import type { Lang } from './i18n';
 
 interface SceneState {
   questionId: number | null;
@@ -127,9 +129,16 @@ interface ExportData {
   objects: SceneObjectData[];
   cameraAngles?: Record<string, number>;
   camera?: { x: number; y: number; z: number; tx: number; ty: number; tz: number };
+  labelsVisible?: boolean;
+  lang?: Lang;
 }
 
-function parseExport(text: string): { state: SceneState; camera: ExportData['camera'] } {
+function parseExport(text: string): {
+  state: SceneState;
+  camera: ExportData['camera'];
+  labelsVisible: boolean;
+  lang: Lang;
+} {
   const data = JSON.parse(text) as Partial<ExportData>;
   if (!Array.isArray(data.objects)) throw new Error('Invalid scene JSON');
   const objects = data.objects.filter((o): o is SceneObjectData => {
@@ -161,6 +170,8 @@ function parseExport(text: string): { state: SceneState; camera: ExportData['cam
       objects,
     },
     camera,
+    labelsVisible: data.labelsVisible === undefined ? true : !!data.labelsVisible,
+    lang: data.lang === 'ja' || data.lang === 'en' || data.lang === 'sv' ? data.lang : 'ja',
   };
 }
 
@@ -178,6 +189,7 @@ export default function App() {
   const [debug, setDebug] = useState<DebugConfig>({ enabled: false });
   const [cam, setCam] = useState<{ pos: THREE.Vector3; target: THREE.Vector3 } | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [lang, setLang] = useState<Lang>('ja');
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -193,6 +205,14 @@ export default function App() {
       controllerRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    const texts: Record<string, string> = {};
+    for (const [kind, kt] of Object.entries(KIND_TEXT[lang])) {
+      if (kt.labelText) texts[kind] = kt.labelText;
+    }
+    controllerRef.current?.setLabelTexts(texts);
+  }, [lang]);
 
   useEffect(() => {
     controllerRef.current?.setObjects(present.objects);
@@ -351,6 +371,8 @@ export default function App() {
       questionId: present.questionId,
       objects: present.objects,
       cameraAngles: cameraAngles ?? undefined,
+      labelsVisible,
+      lang,
       ...(cam ? { camera: { x: cam.pos.x, y: cam.pos.y, z: cam.pos.z, tx: cam.target.x, ty: cam.target.y, tz: cam.target.z } } : {}),
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -368,8 +390,10 @@ export default function App() {
     const reader = new FileReader();
     reader.onload = () => {
       try {
-        const { state, camera } = parseExport(String(reader.result));
+        const { state, camera, labelsVisible: expLabels, lang: expLang } = parseExport(String(reader.result));
         dispatch({ type: 'loadJSON', data: state });
+        setLang(expLang);
+        setLabelsVisible(expLabels);
         if (camera) {
           controllerRef.current?.setCameraState(
             new THREE.Vector3(camera.x, camera.y, camera.z),
@@ -377,7 +401,7 @@ export default function App() {
           );
         }
       } catch {
-        alert('JSONファイルを読み込めませんでした');
+        alert(t(lang, 'loadError'));
       }
     };
     reader.readAsText(file);
@@ -389,21 +413,28 @@ export default function App() {
       <div ref={containerRef} className="stage" />
 
       <header className="topbar">
-        <h1>3D シミュレーション</h1>
+        <h1>{t(lang, 'title')}</h1>
         <div className="top-actions">
-          <button onClick={() => controllerRef.current?.resetCamera()}>視点リセット</button>
-          <button className={rotateMode ? 'active' : ''} onClick={() => setRotateMode((m) => !m)} title="ONにすると左ドラッグで回転">
-            回転モード
+          <button onClick={() => controllerRef.current?.resetCamera()}>{t(lang, 'resetView')}</button>
+          <button className={rotateMode ? 'active' : ''} onClick={() => setRotateMode((m) => !m)} title={t(lang, 'rotateModeTitle')}>
+            {t(lang, 'rotateMode')}
           </button>
-          <button onClick={undo} disabled={past.length === 0} title="元に戻す (Ctrl+Z)">
-            戻す
+          <button onClick={undo} disabled={past.length === 0} title={t(lang, 'undoTitle')}>
+            {t(lang, 'undo')}
           </button>
-          <button onClick={redo} disabled={future.length === 0} title="やり直す (Ctrl+Y)">
-            やり直す
+          <button onClick={redo} disabled={future.length === 0} title={t(lang, 'redoTitle')}>
+            {t(lang, 'redo')}
           </button>
-          <button onClick={downloadJSON}>JSON保存</button>
-          <button onClick={() => fileRef.current?.click()}>JSON読込</button>
-          <button className="help-btn" onClick={() => setHelpOpen(true)} title="使い方">
+          <button onClick={downloadJSON}>{t(lang, 'saveJSON')}</button>
+          <button onClick={() => fileRef.current?.click()}>{t(lang, 'loadJSON')}</button>
+          <select value={lang} onChange={(e) => setLang(e.target.value as Lang)} className="lang-select" title={t(lang, 'help')}>
+            {LANGS.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.label}
+              </option>
+            ))}
+          </select>
+          <button className="help-btn" onClick={() => setHelpOpen(true)} title={t(lang, 'help')}>
             ?
           </button>
         </div>
@@ -411,18 +442,19 @@ export default function App() {
       <input ref={fileRef} type="file" accept=".json,application/json" hidden onChange={onFileChange} />
 
       <aside className="panel left">
-        <h2>道具箱</h2>
+        <h2>{t(lang, 'toolbox')}</h2>
         {CATEGORIES.map((cat) => (
           <section key={cat.id}>
-            <h3>{cat.label}</h3>
+            <h3>{CATEGORY_TEXT[lang][cat.id]}</h3>
             <div className="items">
               {MODEL_DEFS.filter((d) => d.category === cat.id).map((def) => {
                 const count = countByKind.get(def.kind) ?? 0;
                 const disabled = count >= def.maxCount;
+                const text = KIND_TEXT[lang][def.kind];
                 return (
                   <button key={def.kind} className="item" disabled={disabled} onClick={() => addItem(def.kind)}>
-                    <span className="item-label">{def.label}</span>
-                    {def.sub && <span className="item-sub">{def.sub}</span>}
+                    <span className="item-label">{text.label}</span>
+                    {text.sub && <span className="item-sub">{text.sub}</span>}
                     <span className="item-count">
                       {count}/{def.maxCount}
                     </span>
@@ -436,7 +468,7 @@ export default function App() {
 
       <aside className="panel right">
         <section>
-          <h2>問題</h2>
+          <h2>{t(lang, 'questions')}</h2>
           <div className="questions">
             {QUESTIONS.map((q) => (
               <button
@@ -449,17 +481,17 @@ export default function App() {
             ))}
           </div>
           <button onClick={clearScene} disabled={present.objects.length === 0} className="clear-btn">
-            シーンをクリア
+            {t(lang, 'clearScene')}
           </button>
         </section>
 
         <section>
-          <h2>選択中のオブジェクト</h2>
+          <h2>{t(lang, 'selectedObject')}</h2>
           {selectedObj ? (
             <>
               <p className="sel-name">
-                {MODEL_BY_KIND[selectedObj.kind].label}
-                {MODEL_BY_KIND[selectedObj.kind].sub ? ` (${MODEL_BY_KIND[selectedObj.kind].sub})` : ''}
+                {KIND_TEXT[lang][selectedObj.kind].label}
+                {KIND_TEXT[lang][selectedObj.kind].sub ? ` (${KIND_TEXT[lang][selectedObj.kind].sub})` : ''}
               </p>
               <div className="row">
                 <button
@@ -467,18 +499,18 @@ export default function App() {
                   onPointerUp={stopRotateHold}
                   onPointerCancel={stopRotateHold}
                 >
-                  左回転
+                  {t(lang, 'rotateLeft')}
                 </button>
                 <button
                   onPointerDown={(e) => startRotateHold(e, 15)}
                   onPointerUp={stopRotateHold}
                   onPointerCancel={stopRotateHold}
                 >
-                  右回転
+                  {t(lang, 'rotateRight')}
                 </button>
               </div>
               <label className="row">
-                高さ
+                {t(lang, 'height')}
                 <input
                   type="range"
                   min={0}
@@ -492,26 +524,26 @@ export default function App() {
                 <span className="val">{round1(selectedObj.y)}m</span>
               </label>
               <div className="row">
-                <button onClick={snapToGround}>地面に置く</button>
+                <button onClick={snapToGround}>{t(lang, 'snapToGround')}</button>
                 <button className="danger" onClick={removeSelected}>
-                  削除
+                  {t(lang, 'delete')}
                 </button>
               </div>
             </>
           ) : (
-            <p className="muted">オブジェクトをクリックして選択</p>
+            <p className="muted">{t(lang, 'clickToSelect')}</p>
           )}
         </section>
 
         <section>
-          <h2>計測</h2>
+          <h2>{t(lang, 'measurement')}</h2>
           <label className="row">
             <input
               type="checkbox"
               checked={labelsVisible}
               onChange={(e) => setLabelsVisible(e.target.checked)}
             />
-            ラベルを表示
+            {t(lang, 'showLabels')}
           </label>
           <label className="row">
             <input
@@ -519,16 +551,16 @@ export default function App() {
               checked={debug.enabled}
               onChange={(e) => setDebug((d) => ({ ...d, enabled: e.target.checked }))}
             />
-            デバッグモード
+            {t(lang, 'debugMode')}
           </label>
-          <p className="muted">青線=人物の向き、緑線=カメラの視線方向</p>
+          <p className="muted">{t(lang, 'debugLegend')}</p>
           {debug.enabled &&
             persons.map((o) => {
               const a = cameraAngles?.[o.id];
               if (a === undefined) return null;
               return (
                 <p key={o.id} className="angle">
-                  {MODEL_BY_KIND[o.kind].label} の向き vs カメラ: {a}°
+                  {facingVsCamera(lang, KIND_TEXT[lang][o.kind].label, a)}
                 </p>
               );
             })}
@@ -538,18 +570,18 @@ export default function App() {
       {helpOpen && (
         <div className="modal" onClick={() => setHelpOpen(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <h2>使い方</h2>
+            <h2>{t(lang, 'howTo')}</h2>
             <ul>
-              <li>左パネルの「道具箱」から人物や道具をクリックしてシーンに追加します。</li>
-              <li>左ドラッグ: 選択中のオブジェクトを地面に沿って移動</li>
-              <li>Shift+左ドラッグ: 上下方向にも移動（プレゼントを手に持たせるなど）</li>
-              <li>右ドラッグ、または「回転モード」ONで左ドラッグ: その場で回転</li>
-              <li>背景での左ドラッグ: 視点の回転 / ホイール: ズーム</li>
-              <li>オブジェクトをクリックで選択。右パネルで高さ・回転・削除を操作できます。</li>
-              <li>Ctrl+Z: 元に戻す / Ctrl+Y: やり直し</li>
-              <li>「JSON保存」でシーン全体を保存。「JSON読込」で再現できます。</li>
+              <li>{t(lang, 'helpAdd')}</li>
+              <li>{t(lang, 'helpDrag')}</li>
+              <li>{t(lang, 'helpShift')}</li>
+              <li>{t(lang, 'helpRotate')}</li>
+              <li>{t(lang, 'helpOrbit')}</li>
+              <li>{t(lang, 'helpSelect')}</li>
+              <li>{t(lang, 'helpUndo')}</li>
+              <li>{t(lang, 'helpJSON')}</li>
             </ul>
-            <button onClick={() => setHelpOpen(false)}>閉じる</button>
+            <button onClick={() => setHelpOpen(false)}>{t(lang, 'close')}</button>
           </div>
         </div>
       )}

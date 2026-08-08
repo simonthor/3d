@@ -54,6 +54,16 @@
   cursor: pointer;
 }
 
+.top-actions .lang-select {
+  font-size: 12.5px;
+  padding: 5px 6px;
+  border-radius: 6px;
+  border: 1px solid #c9c9c4;
+  background: #fff;
+  color: #1f2328;
+  cursor: pointer;
+}
+
 .top-actions button:hover:not(:disabled),
 .panel button:hover:not(:disabled),
 .modal button:hover:not(:disabled) {
