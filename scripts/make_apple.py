@@ -56,10 +56,16 @@ parts.append(leaf)
 
 mesh = trimesh.util.concatenate(parts)
 
-# Sit on ground plane (z=0) and center on origin
+# Sit on ground plane (z=0) and center on origin (Z-up authoring)
 bounds = mesh.bounds
 mesh.apply_translation((0, 0, -bounds[0][2]))
 
-mesh.export('/home/claude/lowpoly_apple.glb')
+# Convert Z-up to Y-up (three.js)
+rot = trimesh.transformations.rotation_matrix(np.radians(-90), [1, 0, 0])
+mesh.apply_transform(rot)
+bounds = mesh.bounds
+mesh.apply_translation((0, -bounds[0][1], 0))
+
+mesh.export('../public/3dmodels/lowpoly_apple.glb')
 print("Exported. Bounds:", mesh.bounds)
 print("Vertices:", len(mesh.vertices), "Faces:", len(mesh.faces))

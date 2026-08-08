@@ -1,3 +1,10 @@
+# /// script
+# requires-python = ">=3.14"
+# dependencies = [
+#     "numpy>=2.5.1",
+#     "trimesh>=5.0.0",
+# ]
+# ///
 import trimesh
 import numpy as np
 
@@ -92,10 +99,10 @@ for i, sw in enumerate([1.6, 1.3, 1.0]):
     sh = 0.08
     parts.append(box((sw, 0.22, sh), (0, -Dent - 0.22 - i * 0.22, sh / 2 + i * 0.0), STEP))
 
-# ============ Clock on the entrance gable face ============
+# ============ Clock on the entrance facade (below the roofline) ============
 clock_r = 0.24
 clock_y = -Dent - 0.02
-clock_z = H + 0.10
+clock_z = H - 0.45  # sits on the flat wall, clear of the gable roof above
 rot_face_out = trimesh.transformations.rotation_matrix(np.radians(90), [1, 0, 0])
 
 rim = trimesh.creation.cylinder(radius=clock_r, height=0.035, sections=16)
@@ -157,6 +164,12 @@ mesh = trimesh.util.concatenate(parts)
 bounds = mesh.bounds
 mesh.apply_translation((0, 0, -bounds[0][2]))
 
-mesh.export('/home/claude/lowpoly_school.glb')
+# Convert Z-up to Y-up (three.js)
+rot = trimesh.transformations.rotation_matrix(np.radians(-90), [1, 0, 0])
+mesh.apply_transform(rot)
+bounds = mesh.bounds
+mesh.apply_translation((0, -bounds[0][1], 0))
+
+mesh.export('../public/3dmodels/lowpoly_school.glb')
 print("Exported. Bounds:", mesh.bounds)
 print("Vertices:", len(mesh.vertices), "Faces:", len(mesh.faces))
