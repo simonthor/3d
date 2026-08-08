@@ -49,6 +49,12 @@ export const CATEGORIES: { id: Category; label: string }[] = [
   { id: 'props', label: '小物' },
 ];
 
+/**
+ * Resolves the absolute URL for a model definition's GLB file, based on the
+ * app's base path.
+ * @param def The model definition.
+ * @returns The URL string for the model file.
+ */
 export function modelUrl(def: ModelDef): string {
   return `${import.meta.env.BASE_URL}3dmodels/${def.file}`;
 }

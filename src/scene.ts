@@ -31,11 +31,21 @@ const MAX_Y = 3;
 const ROTATION_SENSITIVITY = 8;
 const CLICK_THRESHOLD = 6;
 
-/** Unit vector the person faces in world space (models face -Z at rotY = 0). */
+/**
+ * Unit vector the person faces in world space (models face -Z at rotY = 0).
+ * @param rotY Rotation about the Y axis in radians.
+ * @returns The normalized facing direction.
+ */
 export function facingVector(rotY: number): THREE.Vector3 {
   return new THREE.Vector3(-Math.sin(rotY), 0, -Math.cos(rotY));
 }
 
+/**
+ * Renders `text` (newline-separated lines) onto a canvas sprite, used for the
+ * chest labels above people models.
+ * @param text The label text to draw.
+ * @returns A sprite showing the text above the person.
+ */
 function makeLabelSprite(text: string): THREE.Sprite {
   const canvas = document.createElement('canvas');
   const lines = text.split('\n');
@@ -71,8 +81,15 @@ function makeLabelSprite(text: string): THREE.Sprite {
   return sprite;
 }
 
+/** Clamps `v` into the inclusive range [lo, hi]. */
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
+/**
+ * Owns the three.js scene: renderer, camera, lights, ground, orbit/drag
+ * controls, model instances and the selection ring. React state is reconciled
+ * into the scene through `setObjects()`, and user interactions flow back via
+ * the callbacks passed to the constructor.
+ */
 export class SceneController {
   private container: HTMLElement;
   private cb: SceneControllerCallbacks;
@@ -118,6 +135,12 @@ export class SceneController {
   private animateId = 0;
   private disposed = false;
 
+  /**
+   * Sets up the renderer, camera, lights, ground and controls inside
+   * `container`, preloads all model GLBs, and starts the animation loop.
+   * @param container The DOM element the 3D stage is mounted into.
+   * @param cb Callbacks for selection, move and camera-change events.
+   */
   constructor(container: HTMLElement, cb: SceneControllerCallbacks) {
     this.container = container;
     this.cb = cb;
@@ -197,6 +220,10 @@ export class SceneController {
     this.animate();
   }
 
+  /**
+   * Returns a memoized promise of the loaded GLTF scene root for `kind`.
+   * @param kind The kind whose model URL to load.
+   */
   private getModel(kind: KindId): Promise<THREE.Group> {
     let p = this.modelPromises.get(kind);
     if (!p) {
@@ -207,6 +234,11 @@ export class SceneController {
     return p;
   }
 
+  /**
+   * Reconciles the scene instances to match `list`, adding, removing and
+   * repositioning objects as needed.
+   * @param list The desired scene objects.
+   */
   setObjects(list: SceneObjectData[]) {
     const ids = new Set(list.map((o) => o.id));
     for (const id of Array.from(this.instances.keys())) {
@@ -224,20 +256,36 @@ export class SceneController {
     this.updateDebugLines();
   }
 
+  /**
+   * Selects (or clears) an object by id and shows its selection ring.
+   * @param id The object id to select, or null to deselect.
+   */
   setSelection(id: string | null) {
     this.selectedId = id;
     this.updateSelectionRing();
   }
 
+  /**
+   * Toggles the debug visualization lines (camera heading and person facing vectors).
+   * @param config Whether debug mode is enabled.
+   */
   setDebug(config: DebugConfig) {
     this.debug = config;
     this.updateDebugLines();
   }
 
+  /**
+   * Enables/disables left-button drag-to-rotate.
+   * @param on True to make left drags rotate instead of move.
+   */
   setRotateMode(on: boolean) {
     this.rotateMode = on;
   }
 
+  /**
+   * Shows or hides all label sprites.
+   * @param on True to show labels.
+   */
   setLabelsVisible(on: boolean) {
     this.labelsVisible = on;
     for (const group of this.instances.values()) {
@@ -246,6 +294,10 @@ export class SceneController {
     }
   }
 
+  /**
+   * Replaces the label text per kind and rebuilds existing label sprites.
+   * @param texts Map of kind id to label text (only person kinds are drawn).
+   */
   setLabelTexts(texts: Record<string, string>) {
     this.labelTexts = new Map(Object.entries(texts) as [string, string][]);
     for (const group of this.instances.values()) {
@@ -253,22 +305,36 @@ export class SceneController {
     }
   }
 
+  /** Resets the camera position and orbit target to their defaults. */
   resetCamera() {
     this.camera.position.set(0, 9, 12);
     this.orbit.target.set(0, 0, 0);
     this.orbit.update();
   }
 
+  /**
+   * @returns Cloned copies of the camera position and orbit target.
+   */
   getCameraState() {
     return { pos: this.camera.position.clone(), target: this.orbit.target.clone() };
   }
 
+  /**
+   * Moves the camera to `pos` looking at `target`.
+   * @param pos The new camera position.
+   * @param target The new orbit/look-at target.
+   */
   setCameraState(pos: THREE.Vector3, target: THREE.Vector3) {
     this.camera.position.copy(pos);
     this.orbit.target.copy(target);
     this.orbit.update();
   }
 
+  /**
+   * Loads the model for `o` (if needed), creates its scene instance and adds
+   * it to the draggables.
+   * @param o The scene object data to materialize.
+   */
   private async ensureInstance(o: SceneObjectData) {
     const root = await this.getModel(o.kind);
     if (this.disposed) return;
@@ -295,6 +361,10 @@ export class SceneController {
     this.updateDebugLines();
   }
 
+  /**
+   * Rebuilds the person label sprite for `group` using the current label texts.
+   * @param group The instance group to attach the label to.
+   */
   private rebuildLabelSprite(group: THREE.Group) {
     const kind = group.userData.kind as KindId;
     const old = group.userData.labelSprite as THREE.Sprite | undefined;
@@ -315,12 +385,21 @@ export class SceneController {
     group.add(sprite);
   }
 
+  /**
+   * Positions and orients `group` according to `o`.
+   * @param group The instance group to transform.
+   * @param o The target position and rotation.
+   */
   private applyTransform(group: THREE.Group, o: SceneObjectData) {
     group.position.set(o.x, o.y, o.z);
     group.userData.rotY = o.rotY;
     group.quaternion.setFromAxisAngle(this.rotateAxis, o.rotY);
   }
 
+  /**
+   * Removes the instance with `id` from the scene and disposes its GPU resources.
+   * @param id The instance id to remove.
+   */
   private removeInstance(id: string) {
     const group = this.instances.get(id);
     if (!group) return;
@@ -339,6 +418,7 @@ export class SceneController {
     this.instances.delete(id);
   }
 
+  /** Recreates the selection ring under the currently selected object. */
   private updateSelectionRing() {
     if (this.selectionRing) {
       this.scene.remove(this.selectionRing);
@@ -365,6 +445,7 @@ export class SceneController {
     this.selectionRing = ring;
   }
 
+  /** Redraws the debug lines (camera heading and person facing) when debug mode is on. */
   private updateDebugLines() {
     while (this.lineGroup.children.length > 0) {
       const child = this.lineGroup.children[0] as THREE.Line;
@@ -402,6 +483,11 @@ export class SceneController {
     }
   }
 
+  /**
+   * Begins a drag: picks ground, free or rotate mode based on current state
+   * and the input that started the drag.
+   * @param event The DragControls dragstart event.
+   */
   private onDragStart = (event: { object: THREE.Object3D }) => {
     const group = event.object as THREE.Group;
     const id = group.userData?.id as string | undefined;
@@ -426,6 +512,7 @@ export class SceneController {
     }
   };
 
+  /** Applies the drag movement: rotation, ground-plane or free (xyz) movement. */
   private onDrag = () => {
     const group = this.instances.get(this.dragId ?? '');
     if (!group) return;
@@ -458,6 +545,7 @@ export class SceneController {
     this.updateDebugLines();
   };
 
+  /** Commits the drag and reports the final transform through the onMove callback. */
   private onDragEnd = () => {
     if (this.dragId && this.moved) {
       const group = this.instances.get(this.dragId);
@@ -471,6 +559,10 @@ export class SceneController {
     this.orbit.enabled = true;
   };
 
+  /**
+   * Projects the current pointer ray onto the drag plane.
+   * @returns The intersection point, or null if the ray is parallel to the plane.
+   */
   private groundIntersect(): THREE.Vector3 | null {
     this.raycaster.setFromCamera(this.mouse, this.camera);
     if (this.raycaster.ray.intersectPlane(this.plane, this.intersection)) {
@@ -479,6 +571,7 @@ export class SceneController {
     return null;
   }
 
+  /** Records the pointer-down button, position and the object under the cursor. */
   private onPointerDown = (e: PointerEvent) => {
     this.lastPointerButton = e.button;
     this.shiftHeld = e.shiftKey;
@@ -486,6 +579,7 @@ export class SceneController {
     this.clickObjId = this.pick(e.clientX, e.clientY);
   };
 
+  /** Fires onSelect when a click (no drag movement) ends on an object. */
   private onPointerUp = (e: PointerEvent) => {
     if (e.button !== 0) return;
     const dx = e.clientX - this.clickStart.x;
@@ -495,6 +589,7 @@ export class SceneController {
     }
   };
 
+  /** Updates the normalized device-coordinate mouse position and shift key state. */
   private onPointerMove = (e: PointerEvent) => {
     const rect = this.renderer.domElement.getBoundingClientRect();
     this.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
@@ -502,14 +597,22 @@ export class SceneController {
     this.shiftHeld = e.shiftKey;
   };
 
+  /** Tracks the Shift key down for free-drag mode. */
   private onKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Shift') this.shiftHeld = true;
   };
 
+  /** Clears the Shift key state on key-up. */
   private onKeyUp = (e: KeyboardEvent) => {
     if (e.key === 'Shift') this.shiftHeld = false;
   };
 
+  /**
+   * Raycasts the draggables from a client-space point.
+   * @param clientX The client X coordinate.
+   * @param clientY The client Y coordinate.
+   * @returns The top-most instance id under the point, or null.
+   */
   private pick(clientX: number, clientY: number): string | null {
     const rect = this.renderer.domElement.getBoundingClientRect();
     const ndc = new THREE.Vector2(
@@ -528,6 +631,7 @@ export class SceneController {
     return null;
   }
 
+  /** Updates the camera aspect ratio and renderer size to match the container. */
   private resize() {
     const w = this.container.clientWidth;
     const h = this.container.clientHeight;
@@ -537,6 +641,7 @@ export class SceneController {
     this.renderer.setSize(w, h);
   }
 
+  /** Animation loop: updates orbit controls and renders the scene each frame. */
   private animate = () => {
     if (this.disposed) return;
     this.animateId = requestAnimationFrame(this.animate);
@@ -544,6 +649,7 @@ export class SceneController {
     this.renderer.render(this.scene, this.camera);
   };
 
+  /** Stops the animation loop, removes event listeners and disposes all GPU resources. */
   dispose() {
     this.disposed = true;
     cancelAnimationFrame(this.animateId);

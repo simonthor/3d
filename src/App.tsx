@@ -36,6 +36,12 @@ const initialHistory: HistoryState = { past: [], present: { questionId: null, ob
 
 let seq = 0;
 
+/**
+ * Creates a new object with a unique id. Schools spawn at a fixed spot in
+ * front; everything else spawns at a random position near the origin at y=0.
+ * @param kind The kind of model to create.
+ * @returns The new scene object data.
+ */
 function createObject(kind: KindId): SceneObjectData {
   seq += 1;
   let x: number;
@@ -55,6 +61,14 @@ function createObject(kind: KindId): SceneObjectData {
   return { id: `obj-${seq}`, kind, x, y: 0, z, rotY };
 }
 
+/**
+ * Pure reducer implementing add/remove/move/clear/loadQuestion/loadJSON/undo/
+ * redo over the scene history. Non-recorded moves update the present state
+ * without pushing to the history stack.
+ * @param state The current history state.
+ * @param action The action to apply.
+ * @returns The new history state.
+ */
 function reducer(state: HistoryState, action: Action): HistoryState {
   switch (action.type) {
     case 'add': {
@@ -123,6 +137,13 @@ interface ExportData {
   lang?: Lang;
 }
 
+/**
+ * Parses an exported scene JSON, validating and normalizing each field. Invalid
+ * object entries are filtered out.
+ * @param text The raw JSON text to parse.
+ * @returns The validated scene state plus camera, label and language settings.
+ * @throws {Error} If the JSON has no valid objects array.
+ */
 function parseExport(text: string): {
   state: SceneState;
   camera: ExportData['camera'];
@@ -165,8 +186,13 @@ function parseExport(text: string): {
   };
 }
 
+/** Rounds `v` to one decimal place. */
 const round1 = (v: number) => Math.round(v * 10) / 10;
 
+/**
+ * Root UI component: wires the toolbox/questions/selection panels to the
+ * SceneController and manages undo/redo history, language and JSON import/export.
+ */
 export default function App() {
   const containerRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<SceneController | null>(null);
@@ -225,6 +251,7 @@ export default function App() {
   }, [labelsVisible]);
 
   useEffect(() => {
+    /** Handles global keyboard shortcuts: Ctrl/Cmd+Z undo/redo, Ctrl/Cmd+Y redo, Delete to remove. */
     const onKey = (e: KeyboardEvent) => {
       const mod = e.ctrlKey || e.metaKey;
       if (mod && e.key.toLowerCase() === 'z') {
@@ -269,16 +296,28 @@ export default function App() {
   }, [persons, cam]);
 
   const addItem = (kind: KindId) => dispatch({ type: 'add', kind });
+  /** Clears the whole scene. */
   const clearScene = () => dispatch({ type: 'clear' });
+  /** Loads the preset for question `n` onto the stage. */
   const loadQuestion = (n: number) => dispatch({ type: 'loadQuestion', n });
+  /** Undoes the last recorded action. */
   const undo = () => dispatch({ type: 'undo' });
+  /** Redoes the last undone action. */
   const redo = () => dispatch({ type: 'redo' });
+  /** Removes the currently selected object, if any. */
   const removeSelected = () => {
     if (!selectedId) return;
     dispatch({ type: 'remove', id: selectedId });
     setSelectedId(null);
   };
   const rotateHold = useRef<{ timer: number; baseRotY: number; accum: number } | null>(null);
+  /**
+   * Starts a pointer-held rotation: rotates the selected object by `deg`
+   * degrees every 150ms while the pointer is held down, recording only the
+   * first step in history.
+   * @param e The pointer down event on the rotate button.
+   * @param deg Degrees to rotate per tick (negative = left).
+   */
   const startRotateHold = (e: React.PointerEvent<HTMLButtonElement>, deg: number) => {
     if (!selectedObj || rotateHold.current) return;
     e.preventDefault();
@@ -294,6 +333,7 @@ export default function App() {
       rotY: baseRotY,
       record: true,
     });
+    /** Applies one rotation tick while the pointer is held. */
     const apply = () => {
       const h = rotateHold.current;
       if (!h) return;
@@ -311,12 +351,14 @@ export default function App() {
     apply();
     rotateHold.current.timer = window.setInterval(apply, 150);
   };
+  /** Stops the pointer-held rotation interval. */
   const stopRotateHold = () => {
     const h = rotateHold.current;
     rotateHold.current = null;
     if (!h) return;
     window.clearInterval(h.timer);
   };
+  /** Moves the selected object to height `y` without recording history. */
   const onHeightChange = (y: number) => {
     if (!selectedObj) return;
     dispatch({
@@ -329,6 +371,7 @@ export default function App() {
       record: false,
     });
   };
+  /** Commits the current height to history (called when the slider drag ends). */
   const commitHeight = () => {
     if (!selectedObj) return;
     dispatch({
@@ -341,6 +384,7 @@ export default function App() {
       record: true,
     });
   };
+  /** Snaps the selected object down to y=0, recording the move. */
   const snapToGround = () => {
     if (!selectedObj) return;
     dispatch({
@@ -354,6 +398,7 @@ export default function App() {
     });
   };
 
+  /** Serializes the full scene (objects, camera, settings) and downloads it as scene.json. */
   const downloadJSON = () => {
     const cam = controllerRef.current?.getCameraState() ?? null;
     const data: ExportData = {
@@ -374,6 +419,11 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
+  /**
+   * Reads a selected JSON file and restores the scene, language, labels and
+   * camera from it, alerting the user on parse errors.
+   * @param e The file input change event.
+   */
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;

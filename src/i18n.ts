@@ -127,14 +127,32 @@ const UI = {
 
 export type UIKey = keyof typeof UI.ja
 
+/**
+ * Returns the UI string for `key` in the given language.
+ * @param lang The language to translate into.
+ * @param key The UI string key.
+ * @returns The translated string.
+ */
 export function t(lang: Lang, key: UIKey): string {
   return UI[lang][key]
 }
 
+/**
+ * Formats a person-facing vs camera angle message.
+ * @param lang The language to translate into.
+ * @param label The person's display label.
+ * @param angle The angle in degrees.
+ * @returns The localized "facing vs camera" string.
+ */
 export function facingVsCamera(lang: Lang, label: string, angle: number): string {
   return t(lang, 'facingVsCamera').replace('{label}', label).replace('{angle}', String(angle))
 }
 
+/**
+ * Returns the display label for a language id, falling back to the id itself.
+ * @param lang The language id.
+ * @returns The language's display label.
+ */
 export function langLabel(lang: Lang): string {
   return LANGS.find((l) => l.id === lang)?.label ?? lang
 }
