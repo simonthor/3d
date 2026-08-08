@@ -376,13 +376,13 @@ export class SceneController {
     this.dragId = id;
     this.moved = false;
     this.originalY = group.position.y;
+    this.dragRotY = group.userData.rotY ?? 0;
     this.orbit.enabled = false;
 
     if (this.rotateMode || this.lastPointerButton === 2) {
       this.dragMode = 'rotate';
       this.rotateStartPos.copy(group.position);
       this.lastPointerX = this.mouse.x;
-      this.dragRotY = group.userData.rotY ?? 0;
     } else if (this.shiftHeld) {
       this.dragMode = 'free';
     } else {
