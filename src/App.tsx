@@ -262,17 +262,44 @@ export default function App() {
     dispatch({ type: 'remove', id: selectedId });
     setSelectedId(null);
   };
-  const rotateSelected = (deg: number) => {
-    if (!selectedObj) return;
+  const rotateHold = useRef<{ timer: number; baseRotY: number; accum: number } | null>(null);
+  const startRotateHold = (e: React.PointerEvent<HTMLButtonElement>, deg: number) => {
+    if (!selectedObj || rotateHold.current) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const baseRotY = selectedObj.rotY;
+    rotateHold.current = { timer: 0, baseRotY, accum: 0 };
     dispatch({
       type: 'move',
       id: selectedObj.id,
       x: selectedObj.x,
       y: selectedObj.y,
       z: selectedObj.z,
-      rotY: selectedObj.rotY + (deg * Math.PI) / 180,
+      rotY: baseRotY,
       record: true,
     });
+    const apply = () => {
+      const h = rotateHold.current;
+      if (!h) return;
+      h.accum += deg;
+      dispatch({
+        type: 'move',
+        id: selectedObj.id,
+        x: selectedObj.x,
+        y: selectedObj.y,
+        z: selectedObj.z,
+        rotY: h.baseRotY + (h.accum * Math.PI) / 180,
+        record: false,
+      });
+    };
+    apply();
+    rotateHold.current.timer = window.setInterval(apply, 150);
+  };
+  const stopRotateHold = () => {
+    const h = rotateHold.current;
+    rotateHold.current = null;
+    if (!h) return;
+    window.clearInterval(h.timer);
   };
   const onHeightChange = (y: number) => {
     if (!selectedObj) return;
@@ -428,8 +455,20 @@ export default function App() {
                 {MODEL_BY_KIND[selectedObj.kind].sub ? ` (${MODEL_BY_KIND[selectedObj.kind].sub})` : ''}
               </p>
               <div className="row">
-                <button onClick={() => rotateSelected(-15)}>左回転</button>
-                <button onClick={() => rotateSelected(15)}>右回転</button>
+                <button
+                  onPointerDown={(e) => startRotateHold(e, -15)}
+                  onPointerUp={stopRotateHold}
+                  onPointerCancel={stopRotateHold}
+                >
+                  左回転
+                </button>
+                <button
+                  onPointerDown={(e) => startRotateHold(e, 15)}
+                  onPointerUp={stopRotateHold}
+                  onPointerCancel={stopRotateHold}
+                >
+                  右回転
+                </button>
               </div>
               <label className="row">
                 高さ
