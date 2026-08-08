@@ -76,7 +76,6 @@
   cursor: default;
 }
 
-.top-actions button.active,
 .panel button.active {
   background: #2a6df4;
   border-color: #2a6df4;
@@ -116,6 +115,38 @@
   margin: 0 0 8px;
   padding-bottom: 6px;
   border-bottom: 1px solid #e6e6e0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.collapse-btn {
+  border: none !important;
+  background: none !important;
+  color: #57606a !important;
+  padding: 0 2px !important;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.collapse-btn:hover {
+  background: #f0f2f5 !important;
+}
+
+.panel.collapsed {
+  width: auto;
+  padding: 5px 8px;
+}
+
+.panel.collapsed h2 {
+  margin: 0;
+  padding: 0;
+  border-bottom: none;
+}
+
+.panel.collapsed .panel-body {
+  display: none;
 }
 
 .panel section {

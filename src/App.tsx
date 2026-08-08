@@ -200,12 +200,13 @@ export default function App() {
   const [history, dispatch] = useReducer(reducer, initialHistory);
   const { past, present, future } = history;
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [rotateMode, setRotateMode] = useState(false);
   const [labelsVisible, setLabelsVisible] = useState(true);
   const [debug, setDebug] = useState<DebugConfig>({ enabled: false });
   const [cam, setCam] = useState<{ pos: THREE.Vector3; target: THREE.Vector3 } | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
   const [lang, setLang] = useState<Lang>('ja');
+  const [leftOpen, setLeftOpen] = useState(true);
+  const [rightOpen, setRightOpen] = useState(true);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -241,10 +242,6 @@ export default function App() {
   useEffect(() => {
     controllerRef.current?.setDebug(debug);
   }, [debug]);
-
-  useEffect(() => {
-    controllerRef.current?.setRotateMode(rotateMode);
-  }, [rotateMode]);
 
   useEffect(() => {
     controllerRef.current?.setLabelsVisible(labelsVisible);
@@ -456,9 +453,6 @@ export default function App() {
         <h1>{t(lang, 'title')}</h1>
         <div className="top-actions">
           <button onClick={() => controllerRef.current?.resetCamera()}>{t(lang, 'resetView')}</button>
-          <button className={rotateMode ? 'active' : ''} onClick={() => setRotateMode((m) => !m)} title={t(lang, 'rotateModeTitle')}>
-            {t(lang, 'rotateMode')}
-          </button>
           <button onClick={undo} disabled={past.length === 0} title={t(lang, 'undoTitle')}>
             {t(lang, 'undo')}
           </button>
@@ -481,129 +475,155 @@ export default function App() {
       </header>
       <input ref={fileRef} type="file" accept=".json,application/json" hidden onChange={onFileChange} />
 
-      <aside className="panel left">
-        <h2>{t(lang, 'toolbox')}</h2>
-        {CATEGORIES.map((cat) => (
-          <section key={cat.id}>
-            <h3>{CATEGORY_TEXT[lang][cat.id]}</h3>
-            <div className="items">
-              {MODEL_DEFS.filter((d) => d.category === cat.id).map((def) => {
-                const count = countByKind.get(def.kind) ?? 0;
-                const disabled = count >= def.maxCount;
-                const text = KIND_TEXT[lang][def.kind];
-                return (
-                  <button key={def.kind} className="item" disabled={disabled} onClick={() => addItem(def.kind)}>
-                    <span className="item-label">{text.label}</span>
-                    {text.sub && <span className="item-sub">{text.sub}</span>}
-                    <span className="item-count">
-                      {count}/{def.maxCount}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-        ))}
-      </aside>
-
-      <aside className="panel right">
-        <section>
-          <h2>{t(lang, 'questions')}</h2>
-          <div className="questions">
-            {QUESTIONS.map((q) => (
-              <button
-                key={q.id}
-                className={present.questionId === q.id ? 'active' : ''}
-                onClick={() => loadQuestion(q.id)}
-              >
-                Q{q.id}
-              </button>
+      <aside className={`panel left${leftOpen ? '' : ' collapsed'}`}>
+        <h2>
+          <button
+            className="collapse-btn"
+            onClick={() => setLeftOpen((o) => !o)}
+            title={leftOpen ? t(lang, 'collapsePanel') : t(lang, 'expandPanel')}
+          >
+            {leftOpen ? '‹' : '›'}
+          </button>
+          <span>{t(lang, 'toolbox')}</span>
+        </h2>
+        {leftOpen && (
+          <div className="panel-body">
+            {CATEGORIES.map((cat) => (
+              <section key={cat.id}>
+                <h3>{CATEGORY_TEXT[lang][cat.id]}</h3>
+                <div className="items">
+                  {MODEL_DEFS.filter((d) => d.category === cat.id).map((def) => {
+                    const count = countByKind.get(def.kind) ?? 0;
+                    const disabled = count >= def.maxCount;
+                    const text = KIND_TEXT[lang][def.kind];
+                    return (
+                      <button key={def.kind} className="item" disabled={disabled} onClick={() => addItem(def.kind)}>
+                        <span className="item-label">{text.label}</span>
+                        {text.sub && <span className="item-sub">{text.sub}</span>}
+                        <span className="item-count">
+                          {count}/{def.maxCount}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
             ))}
           </div>
-          <button onClick={clearScene} disabled={present.objects.length === 0} className="clear-btn">
-            {t(lang, 'clearScene')}
+        )}
+      </aside>
+
+      <aside className={`panel right${rightOpen ? '' : ' collapsed'}`}>
+        <h2>
+          <button
+            className="collapse-btn"
+            onClick={() => setRightOpen((o) => !o)}
+            title={rightOpen ? t(lang, 'collapsePanel') : t(lang, 'expandPanel')}
+          >
+            {rightOpen ? '›' : '‹'}
           </button>
-        </section>
-
-        <section>
-          <h2>{t(lang, 'selectedObject')}</h2>
-          {selectedObj ? (
-            <>
-              <p className="sel-name">
-                {KIND_TEXT[lang][selectedObj.kind].label}
-                {KIND_TEXT[lang][selectedObj.kind].sub ? ` (${KIND_TEXT[lang][selectedObj.kind].sub})` : ''}
-              </p>
-              <div className="row">
-                <button
-                  onPointerDown={(e) => startRotateHold(e, -15)}
-                  onPointerUp={stopRotateHold}
-                  onPointerCancel={stopRotateHold}
-                >
-                  {t(lang, 'rotateLeft')}
-                </button>
-                <button
-                  onPointerDown={(e) => startRotateHold(e, 15)}
-                  onPointerUp={stopRotateHold}
-                  onPointerCancel={stopRotateHold}
-                >
-                  {t(lang, 'rotateRight')}
-                </button>
+          <span>{t(lang, 'questions')}</span>
+        </h2>
+        {rightOpen && (
+          <div className="panel-body">
+            <section>
+              <div className="questions">
+                {QUESTIONS.map((q) => (
+                  <button
+                    key={q.id}
+                    className={present.questionId === q.id ? 'active' : ''}
+                    onClick={() => loadQuestion(q.id)}
+                  >
+                    Q{q.id}
+                  </button>
+                ))}
               </div>
+              <button onClick={clearScene} disabled={present.objects.length === 0} className="clear-btn">
+                {t(lang, 'clearScene')}
+              </button>
+            </section>
+
+            <section>
+              <h2>{t(lang, 'selectedObject')}</h2>
+              {selectedObj ? (
+                <>
+                  <p className="sel-name">
+                    {KIND_TEXT[lang][selectedObj.kind].label}
+                    {KIND_TEXT[lang][selectedObj.kind].sub ? ` (${KIND_TEXT[lang][selectedObj.kind].sub})` : ''}
+                  </p>
+                  <div className="row">
+                    <button
+                      onPointerDown={(e) => startRotateHold(e, -15)}
+                      onPointerUp={stopRotateHold}
+                      onPointerCancel={stopRotateHold}
+                    >
+                      {t(lang, 'rotateLeft')}
+                    </button>
+                    <button
+                      onPointerDown={(e) => startRotateHold(e, 15)}
+                      onPointerUp={stopRotateHold}
+                      onPointerCancel={stopRotateHold}
+                    >
+                      {t(lang, 'rotateRight')}
+                    </button>
+                  </div>
+                  <label className="row">
+                    {t(lang, 'height')}
+                    <input
+                      type="range"
+                      min={0}
+                      max={6}
+                      step={0.05}
+                      value={Math.max(0, Math.min(6, round1(selectedObj.y)))}
+                      onChange={(e) => onHeightChange(Number(e.target.value))}
+                      onPointerUp={commitHeight}
+                      onPointerLeave={commitHeight}
+                    />
+                    <span className="val">{round1(selectedObj.y)}m</span>
+                  </label>
+                  <div className="row">
+                    <button onClick={snapToGround}>{t(lang, 'snapToGround')}</button>
+                    <button className="danger" onClick={removeSelected}>
+                      {t(lang, 'delete')}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <p className="muted">{t(lang, 'clickToSelect')}</p>
+              )}
+            </section>
+
+            <section>
+              <h2>{t(lang, 'measurement')}</h2>
               <label className="row">
-                {t(lang, 'height')}
                 <input
-                  type="range"
-                  min={0}
-                  max={6}
-                  step={0.05}
-                  value={Math.max(0, Math.min(6, round1(selectedObj.y)))}
-                  onChange={(e) => onHeightChange(Number(e.target.value))}
-                  onPointerUp={commitHeight}
-                  onPointerLeave={commitHeight}
+                  type="checkbox"
+                  checked={labelsVisible}
+                  onChange={(e) => setLabelsVisible(e.target.checked)}
                 />
-                <span className="val">{round1(selectedObj.y)}m</span>
+                {t(lang, 'showLabels')}
               </label>
-              <div className="row">
-                <button onClick={snapToGround}>{t(lang, 'snapToGround')}</button>
-                <button className="danger" onClick={removeSelected}>
-                  {t(lang, 'delete')}
-                </button>
-              </div>
-            </>
-          ) : (
-            <p className="muted">{t(lang, 'clickToSelect')}</p>
-          )}
-        </section>
-
-        <section>
-          <h2>{t(lang, 'measurement')}</h2>
-          <label className="row">
-            <input
-              type="checkbox"
-              checked={labelsVisible}
-              onChange={(e) => setLabelsVisible(e.target.checked)}
-            />
-            {t(lang, 'showLabels')}
-          </label>
-          <label className="row">
-            <input
-              type="checkbox"
-              checked={debug.enabled}
-              onChange={(e) => setDebug((d) => ({ ...d, enabled: e.target.checked }))}
-            />
-            {t(lang, 'debugMode')}
-          </label>
-          {debug.enabled &&
-            persons.map((o) => {
-              const a = cameraAngles?.[o.id];
-              if (a === undefined) return null;
-              return (
-                <p key={o.id} className="angle">
-                  {facingVsCamera(lang, KIND_TEXT[lang][o.kind].label, a)}
-                </p>
-              );
-            })}
-        </section>
+              <label className="row">
+                <input
+                  type="checkbox"
+                  checked={debug.enabled}
+                  onChange={(e) => setDebug((d) => ({ ...d, enabled: e.target.checked }))}
+                />
+                {t(lang, 'debugMode')}
+              </label>
+              {debug.enabled &&
+                persons.map((o) => {
+                  const a = cameraAngles?.[o.id];
+                  if (a === undefined) return null;
+                  return (
+                    <p key={o.id} className="angle">
+                      {facingVsCamera(lang, KIND_TEXT[lang][o.kind].label, a)}
+                    </p>
+                  );
+                })}
+            </section>
+          </div>
+        )}
       </aside>
 
       {helpOpen && (
@@ -616,6 +636,7 @@ export default function App() {
               <li>{t(lang, 'helpShift')}</li>
               <li>{t(lang, 'helpRotate')}</li>
               <li>{t(lang, 'helpOrbit')}</li>
+              <li>{t(lang, 'helpTouch')}</li>
               <li>{t(lang, 'helpSelect')}</li>
               <li>{t(lang, 'helpUndo')}</li>
               <li>{t(lang, 'helpJSON')}</li>

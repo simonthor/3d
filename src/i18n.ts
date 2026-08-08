@@ -12,8 +12,6 @@ const UI = {
   ja: {
     title: '3D シミュレーション',
     resetView: '視点リセット',
-    rotateMode: '回転モード',
-    rotateModeTitle: 'ONにすると左ドラッグで回転',
     undo: '戻す',
     undoTitle: '元に戻す (Ctrl+Z)',
     redo: 'やり直す',
@@ -40,18 +38,19 @@ const UI = {
     helpAdd: '左パネルの「道具箱」から人物や道具をクリックしてシーンに追加します。',
     helpDrag: '左ドラッグ: 選択中のオブジェクトを地面に沿って移動',
     helpShift: 'Shift+左ドラッグ: 上下方向にも移動（プレゼントを手に持たせるなど）',
-    helpRotate: '右ドラッグ、または「回転モード」ONで左ドラッグ: その場で回転',
+    helpRotate: '右ドラッグ: その場で回転',
     helpOrbit: '背景での左ドラッグ: 視点の回転 / ホイール: ズーム',
+    helpTouch: 'タッチ操作: 1本指で視点の回転、2本指でパン（視点の移動）',
     helpSelect: 'オブジェクトをクリックで選択。右パネルで高さ・回転・削除を操作できます。',
     helpUndo: 'Ctrl+Z: 元に戻す / Ctrl+Y: やり直し',
     helpJSON: '「保存」でシーン全体を保存。「読込」で再現できます。',
     close: '閉じる',
+    collapsePanel: 'パネルを折りたたむ',
+    expandPanel: 'パネルを展開する',
   },
   en: {
     title: '3D Simulation',
     resetView: 'Reset view',
-    rotateMode: 'Rotate mode',
-    rotateModeTitle: 'Left-drag rotates when ON',
     undo: 'Undo',
     undoTitle: 'Undo (Ctrl+Z)',
     redo: 'Redo',
@@ -78,18 +77,19 @@ const UI = {
     helpAdd: 'Click people and props in the toolbox on the left to add them to the scene.',
     helpDrag: 'Left drag: move the selected object along the ground',
     helpShift: 'Shift+left drag: also move vertically (e.g. hand a present over)',
-    helpRotate: 'Right drag, or left drag with Rotate mode ON: rotate in place',
+    helpRotate: 'Right drag: rotate in place',
     helpOrbit: 'Left drag on the background: rotate the view / wheel: zoom',
+    helpTouch: 'Touch: rotate the view with one finger, pan with two fingers',
     helpSelect: 'Click an object to select it. Adjust height, rotation and deletion in the right panel.',
     helpUndo: 'Ctrl+Z: undo / Ctrl+Y: redo',
     helpJSON: 'Use Save to save the whole scene; Load reproduces it.',
     close: 'Close',
+    collapsePanel: 'Collapse panel',
+    expandPanel: 'Expand panel',
   },
   sv: {
     title: '3D-simulering',
     resetView: 'Återställ vy',
-    rotateMode: 'Rotationsläge',
-    rotateModeTitle: 'Vänsterdrag roterar när PÅ',
     undo: 'Ångra',
     undoTitle: 'Ångra (Ctrl+Z)',
     redo: 'Gör om',
@@ -116,12 +116,15 @@ const UI = {
     helpAdd: 'Klicka på personer och saker i verktygslådan till vänster för att lägga till dem i scenen.',
     helpDrag: 'Vänsterdrag: flytta det valda objektet längs marken',
     helpShift: 'Skift+vänsterdrag: flytta även vertikalt (t.ex. för att räcka en present)',
-    helpRotate: 'Högerdrag, eller vänsterdrag med Rotationsläge PÅ: rotera på plats',
+    helpRotate: 'Högerdrag: rotera på plats',
     helpOrbit: 'Vänsterdrag på bakgrunden: rotera vyn / hjul: zooma',
+    helpTouch: 'Pek: rotera vyn med ett finger, panorera med två fingrar',
     helpSelect: 'Klicka på ett objekt för att välja. Höjd, rotation och radering sköts i högerpanelen.',
     helpUndo: 'Ctrl+Z: ångra / Ctrl+Y: gör om',
     helpJSON: 'Spara sparar hela scenen; Läs in återskapar den.',
     close: 'Stäng',
+    collapsePanel: 'Fäll ihop panelen',
+    expandPanel: 'Fäll ut panelen',
   },
 } as const
 
@@ -146,15 +149,6 @@ export function t(lang: Lang, key: UIKey): string {
  */
 export function facingVsCamera(lang: Lang, label: string, angle: number): string {
   return t(lang, 'facingVsCamera').replace('{label}', label).replace('{angle}', String(angle))
-}
-
-/**
- * Returns the display label for a language id, falling back to the id itself.
- * @param lang The language id.
- * @returns The language's display label.
- */
-export function langLabel(lang: Lang): string {
-  return LANGS.find((l) => l.id === lang)?.label ?? lang
 }
 
 export interface KindText {

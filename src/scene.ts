@@ -36,7 +36,7 @@ const CLICK_THRESHOLD = 6;
  * @param rotY Rotation about the Y axis in radians.
  * @returns The normalized facing direction.
  */
-export function facingVector(rotY: number): THREE.Vector3 {
+function facingVector(rotY: number): THREE.Vector3 {
   return new THREE.Vector3(-Math.sin(rotY), 0, -Math.cos(rotY));
 }
 
@@ -112,7 +112,6 @@ export class SceneController {
 
   private debug: DebugConfig = { enabled: false };
   private selectedId: string | null = null;
-  private rotateMode = false;
   private shiftHeld = false;
   private labelsVisible = true;
   private labelTexts = new Map<KindId, string>();
@@ -272,14 +271,6 @@ export class SceneController {
   setDebug(config: DebugConfig) {
     this.debug = config;
     this.updateDebugLines();
-  }
-
-  /**
-   * Enables/disables left-button drag-to-rotate.
-   * @param on True to make left drags rotate instead of move.
-   */
-  setRotateMode(on: boolean) {
-    this.rotateMode = on;
   }
 
   /**
@@ -484,8 +475,8 @@ export class SceneController {
   }
 
   /**
-   * Begins a drag: picks ground, free or rotate mode based on current state
-   * and the input that started the drag.
+   * Begins a drag: picks ground, free or rotate mode based on the input
+   * that started the drag.
    * @param event The DragControls dragstart event.
    */
   private onDragStart = (event: { object: THREE.Object3D }) => {
@@ -498,7 +489,7 @@ export class SceneController {
     this.dragRotY = group.userData.rotY ?? 0;
     this.orbit.enabled = false;
 
-    if (this.rotateMode || this.lastPointerButton === 2) {
+    if (this.lastPointerButton === 2) {
       this.dragMode = 'rotate';
       this.rotateStartPos.copy(group.position);
       this.lastPointerX = this.mouse.x;
