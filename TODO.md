@@ -1,2 +1,3 @@
 - [ ] Add patterns to the shirts of the people, and change the length of the shorts and hair to make the people more distinct, even for people with colorblindness.
 - [ ] Add a letter to the front of each person
+- [ ] Skapa en github action-fil som genererar hemsidan och deployar

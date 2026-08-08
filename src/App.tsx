@@ -1,248 +1,535 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls';
-import { DragControls } from 'three/addons/controls/DragControls.js';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import './App.css';
+import { SceneController } from './scene';
+import type { DebugConfig, SceneObjectData } from './scene';
+import { CATEGORIES, MODEL_BY_KIND, MODEL_DEFS } from './models';
+import type { KindId } from './models';
+import { QUESTIONS } from './questions';
 
-const App = ({ 
-    width = '100%', 
-    height = '100%' 
-}) => {
-    const mountRef = useRef(null);
-    const [models, setModels] = useState([]);
-    const [isLoading, setIsLoading] = useState(true);
+interface SceneState {
+  questionId: number | null;
+  objects: SceneObjectData[];
+}
 
-    useEffect(() => {
-        if (!mountRef.current) return
+interface HistoryState {
+  past: SceneState[];
+  present: SceneState;
+  future: SceneState[];
+}
 
-        const loader = new GLTFLoader();
-        const modelPromises = [];
+type Action =
+  | { type: 'add'; kind: KindId }
+  | { type: 'remove'; id: string }
+  | { type: 'move'; id: string; x: number; y: number; z: number; rotY: number; record: boolean }
+  | { type: 'clear' }
+  | { type: 'loadQuestion'; n: number }
+  | { type: 'loadJSON'; data: SceneState }
+  | { type: 'undo' }
+  | { type: 'redo' };
 
-        const promise1 = new Promise((resolve) => {
-            loader.load( `${import.meta.env.BASE_URL}/3dmodels/stick/stick2.glb`, ( gltf: any ) => {
-                const root = gltf.scene;
-                root.updateMatrixWorld();
-                root.position.set(1, 1, 0); // Adjust as needed
-                root.rotation.set(0, 0, 0); // Reset rotation
-                resolve(root);
-            },
-            undefined, // No progress callback
-            (error: any) => {
-                console.error('Error loading glTF model:', error);
-                resolve(null);
-            });
-        });
-        modelPromises.push(promise1);
-        
-        const promise2 = new Promise((resolve) => {
-            loader.load( `${import.meta.env.BASE_URL}/3dmodels/stick/stick1.glb`, ( gltf: any ) => {
-                const root = gltf.scene;
-                root.updateMatrixWorld();
-                root.position.set(-1, 1, 0); // Adjust as needed
-                root.rotation.set(0, 0, 0); // Reset rotation
-                resolve(root);
-            },
-            undefined, // No progress callback
-            (error: any) => {
-                console.error('Error loading glTF model:', error);
-                resolve(null);
-            });
-        });
-        modelPromises.push(promise2);
+const HISTORY_LIMIT = 100;
 
-        const promise3 = new Promise((resolve) => {
-            const geometry = new THREE.BoxGeometry(1, 1, 1);
-            const material = new THREE.MeshStandardMaterial({ color: 0x00ff00 });
-            const cube = new THREE.Mesh(geometry, material);
-            cube.position.set(0, 0.5, 0); // Adjust as needed
-            resolve(cube);
-        });
-        modelPromises.push(promise3);
+const initialHistory: HistoryState = { past: [], present: { questionId: null, objects: [] }, future: [] };
 
-        Promise.all(modelPromises).then((loadedModels) => {
-            const validModels = loadedModels.filter(model => model !== null);
-            setModels(validModels);
-            setIsLoading(false);
-        });
-    }, []);
+function mulberry32(a: number) {
+  return function () {
+    let t = (a += 0x6d2b79f5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
-    useEffect(() => {
-        if (!mountRef.current || isLoading || models.length === 0) return;
+let seq = 0;
 
-        // Scene setup
-        const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0xf0f0f0);
-        const raycaster = new THREE.Raycaster();
-        const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-        const mouse = new THREE.Vector2();
+function createObject(kind: KindId, questionId: number | null): SceneObjectData {
+  seq += 1;
+  const rnd = mulberry32(seq * 7919 + (questionId ?? 0) * 104729 + 12345);
+  let x: number;
+  let z: number;
+  let rotY: number;
+  if (kind === 'school') {
+    x = 0;
+    z = -4.2;
+    rotY = 0;
+  } else {
+    const angle = rnd() * Math.PI * 2;
+    const r = 1.0 + rnd() * 2.8;
+    x = Math.cos(angle) * r;
+    z = Math.sin(angle) * r;
+    rotY = rnd() * Math.PI * 2;
+  }
+  return { id: `obj-${seq}`, kind, x, y: 0, z, rotY };
+}
 
-        // Camera setup
-        const camera = new THREE.PerspectiveCamera(
-            75, 
-            mountRef.current.clientWidth / mountRef.current.clientHeight, 
-            0.1, 
-            1000
-        );
-        camera.position.set(3, 3, 3);
+function reducer(state: HistoryState, action: Action): HistoryState {
+  switch (action.type) {
+    case 'add': {
+      const obj = createObject(action.kind, state.present.questionId);
+      const present = { ...state.present, objects: [...state.present.objects, obj] };
+      return { past: [...state.past, state.present].slice(-HISTORY_LIMIT), present, future: [] };
+    }
+    case 'remove': {
+      const present = {
+        ...state.present,
+        objects: state.present.objects.filter((o) => o.id !== action.id),
+      };
+      return { past: [...state.past, state.present].slice(-HISTORY_LIMIT), present, future: [] };
+    }
+    case 'move': {
+      const objects = state.present.objects.map((o) =>
+        o.id === action.id ? { ...o, x: action.x, y: action.y, z: action.z, rotY: action.rotY } : o,
+      );
+      const present = { ...state.present, objects };
+      if (action.record === false) return { ...state, present };
+      return { past: [...state.past, state.present].slice(-HISTORY_LIMIT), present, future: [] };
+    }
+    case 'clear': {
+      if (state.present.objects.length === 0) return state;
+      const present = { questionId: state.present.questionId, objects: [] };
+      return { past: [...state.past, state.present].slice(-HISTORY_LIMIT), present, future: [] };
+    }
+    case 'loadQuestion': {
+      const question = QUESTIONS.find((q) => q.id === action.n);
+      if (!question) return state;
+      const objects = question.items.map((kind) => createObject(kind, action.n));
+      const present = { questionId: action.n, objects };
+      return { past: [...state.past, state.present].slice(-HISTORY_LIMIT), present, future: [] };
+    }
+    case 'loadJSON': {
+      return { past: [...state.past, state.present].slice(-HISTORY_LIMIT), present: action.data, future: [] };
+    }
+    case 'undo': {
+      if (state.past.length === 0) return state;
+      const previous = state.past[state.past.length - 1];
+      return {
+        past: state.past.slice(0, -1),
+        present: previous,
+        future: [state.present, ...state.future].slice(0, HISTORY_LIMIT),
+      };
+    }
+    case 'redo': {
+      if (state.future.length === 0) return state;
+      const next = state.future[0];
+      return {
+        past: [...state.past, state.present].slice(-HISTORY_LIMIT),
+        present: next,
+        future: state.future.slice(1),
+      };
+    }
+  }
+}
 
-        // Renderer setup
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
-        mountRef.current.appendChild(renderer.domElement);
+interface ExportData {
+  version: 1;
+  questionId: number | null;
+  objects: SceneObjectData[];
+  camera?: { x: number; y: number; z: number; tx: number; ty: number; tz: number };
+}
 
-        // Controls
-        const orbitControls = new OrbitControls(camera, renderer.domElement);
-        let isRightClick = false; // Right mouse button
+function parseExport(text: string): { state: SceneState; camera: ExportData['camera'] } {
+  const data = JSON.parse(text) as Partial<ExportData>;
+  if (!Array.isArray(data.objects)) throw new Error('Invalid scene JSON');
+  const objects = data.objects.filter((o): o is SceneObjectData => {
+    return (
+      !!o &&
+      typeof o.id === 'string' &&
+      typeof o.kind === 'string' &&
+      o.kind in MODEL_BY_KIND &&
+      typeof o.x === 'number' &&
+      typeof o.y === 'number' &&
+      typeof o.z === 'number' &&
+      typeof o.rotY === 'number'
+    );
+  });
+  const cam = data.camera;
+  const camera =
+    cam &&
+    typeof cam.x === 'number' &&
+    typeof cam.y === 'number' &&
+    typeof cam.z === 'number' &&
+    typeof cam.tx === 'number' &&
+    typeof cam.ty === 'number' &&
+    typeof cam.tz === 'number'
+      ? { x: cam.x, y: cam.y, z: cam.z, tx: cam.tx, ty: cam.ty, tz: cam.tz }
+      : undefined;
+  return {
+    state: {
+      questionId: typeof data.questionId === 'number' ? data.questionId : null,
+      objects,
+    },
+    camera,
+  };
+}
 
-        // Add ambient light
-        const ambientLight = new THREE.AmbientLight(0xcccccc, 0.5);
-        scene.add(ambientLight);
+const round1 = (v: number) => Math.round(v * 10) / 10;
 
-        // Add directional light
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-        directionalLight.position.set(1, 1, 1).normalize();
-        scene.add(directionalLight);
+export default function App() {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const controllerRef = useRef<SceneController | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [history, dispatch] = useReducer(reducer, initialHistory);
+  const { past, present, future } = history;
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [rotateMode, setRotateMode] = useState(false);
+  const [labelsVisible, setLabelsVisible] = useState(true);
+  const [debug, setDebug] = useState<DebugConfig>({ enabled: false, subjectId: null, targetId: null });
+  const [helpOpen, setHelpOpen] = useState(false);
 
-        models.forEach(model => scene.add(model));  // <-- Add loaded models to scene
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const controller = new SceneController(containerRef.current, {
+      onSelect: (id) => setSelectedId(id),
+      onMove: (id, x, y, z, rotY) => dispatch({ type: 'move', id, x, y, z, rotY, record: true }),
+    });
+    controllerRef.current = controller;
+    return () => {
+      controller.dispose();
+      controllerRef.current = null;
+    };
+  }, []);
 
-        // Grid helper
-        const gridHelper = new THREE.GridHelper(10, 10);
-        scene.add(gridHelper);
-        
-        // Create drag controls for the objects
-        const dragControls = new DragControls(models, camera, renderer.domElement);
-        const rotationSensitivity = 10; // The higher the faster the rotation
-        let originalY: number | undefined;
-        let originalX: number | undefined;
-        let dragOffset: THREE.Vector3 = new THREE.Vector3();
+  useEffect(() => {
+    controllerRef.current?.setObjects(present.objects);
+  }, [present.objects]);
 
-        // Raycasting function
-        const getIntersection = () => {
-            raycaster.setFromCamera(mouse, camera);
-            let intersection = new THREE.Vector3();
-            raycaster.ray.intersectPlane(plane, intersection);
-            return intersection ? new THREE.Vector3(intersection.x, originalY, intersection.z) : null;
-        };
+  useEffect(() => {
+    controllerRef.current?.setSelection(selectedId);
+  }, [selectedId]);
 
-        // Update mouse position on mousemove
-        window.addEventListener('mousemove', (event) => {
-            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-        });
+  useEffect(() => {
+    controllerRef.current?.setDebug(debug);
+  }, [debug]);
 
-        // Track right-click
-        window.addEventListener('mousedown', (event) => {
-            isRightClick = event.button === 2;
-        });
+  useEffect(() => {
+    controllerRef.current?.setRotateMode(rotateMode);
+  }, [rotateMode]);
 
-        window.addEventListener('mouseup', () => {
-            isRightClick = false;
-            originalX = undefined;
-            originalY = undefined;
-        });
+  useEffect(() => {
+    controllerRef.current?.setLabelsVisible(labelsVisible);
+  }, [labelsVisible]);
 
-        // Restrict movement to X and Z plane
-        dragControls.addEventListener('dragstart', (event) => {
-            orbitControls.enabled = false;
-            originalY = event.object.position.y;
-            if (isRightClick) {
-                originalX = mouse.x;
-                return;
-            }
-            // Calculate the offset
-            const intersection = getIntersection();
-            if (intersection) {
-                dragOffset.copy(intersection).sub(event.object.position);
-            }
-        });
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) dispatch({ type: 'redo' });
+        else dispatch({ type: 'undo' });
+      } else if (mod && e.key.toLowerCase() === 'y') {
+        e.preventDefault();
+        dispatch({ type: 'redo' });
+      } else if (e.key === 'Delete' && selectedId) {
+        dispatch({ type: 'remove', id: selectedId });
+        setSelectedId(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selectedId]);
 
+  const countByKind = useMemo(() => {
+    const m = new Map<KindId, number>();
+    for (const o of present.objects) m.set(o.kind, (m.get(o.kind) ?? 0) + 1);
+    return m;
+  }, [present.objects]);
 
-        // Rotate an object around an arbitrary axis in world space       
-        const rotateAroundWorldAxis = (object, axis, radians) => {
-            const rotWorldMatrix = new THREE.Matrix4();
-            rotWorldMatrix.makeRotationAxis(axis.normalize(), radians);
-            
-            // pre-multiply
-            rotWorldMatrix.multiply(object.matrix); 
+  const selectedObj = present.objects.find((o) => o.id === selectedId) ?? null;
+  const persons = present.objects.filter((o) => MODEL_BY_KIND[o.kind].isPerson);
 
-            object.matrix = rotWorldMatrix;
+  const angle = useMemo(() => {
+    const sub = present.objects.find((o) => o.id === debug.subjectId);
+    const tgt = present.objects.find((o) => o.id === debug.targetId);
+    if (!sub || !tgt || sub === tgt) return null;
+    const fx = -Math.sin(sub.rotY);
+    const fz = -Math.cos(sub.rotY);
+    const mx = tgt.x - sub.x;
+    const mz = tgt.z - sub.z;
+    const len = Math.hypot(mx, mz);
+    if (len < 1e-6) return null;
+    const cosA = (fx * mx + fz * mz) / len;
+    return Math.round((Math.acos(Math.min(1, Math.max(-1, cosA))) * 180) / Math.PI);
+  }, [present.objects, debug.subjectId, debug.targetId]);
 
-            object.rotation.setFromRotationMatrix(object.matrix);
+  const addItem = (kind: KindId) => dispatch({ type: 'add', kind });
+  const clearScene = () => dispatch({ type: 'clear' });
+  const loadQuestion = (n: number) => dispatch({ type: 'loadQuestion', n });
+  const undo = () => dispatch({ type: 'undo' });
+  const redo = () => dispatch({ type: 'redo' });
+  const removeSelected = () => {
+    if (!selectedId) return;
+    dispatch({ type: 'remove', id: selectedId });
+    setSelectedId(null);
+  };
+  const rotateSelected = (deg: number) => {
+    if (!selectedObj) return;
+    dispatch({
+      type: 'move',
+      id: selectedObj.id,
+      x: selectedObj.x,
+      y: selectedObj.y,
+      z: selectedObj.z,
+      rotY: selectedObj.rotY + (deg * Math.PI) / 180,
+      record: true,
+    });
+  };
+  const onHeightChange = (y: number) => {
+    if (!selectedObj) return;
+    dispatch({
+      type: 'move',
+      id: selectedObj.id,
+      x: selectedObj.x,
+      y,
+      z: selectedObj.z,
+      rotY: selectedObj.rotY,
+      record: false,
+    });
+  };
+  const commitHeight = () => {
+    if (!selectedObj) return;
+    dispatch({
+      type: 'move',
+      id: selectedObj.id,
+      x: selectedObj.x,
+      y: selectedObj.y,
+      z: selectedObj.z,
+      rotY: selectedObj.rotY,
+      record: true,
+    });
+  };
+  const snapToGround = () => {
+    if (!selectedObj) return;
+    dispatch({
+      type: 'move',
+      id: selectedObj.id,
+      x: selectedObj.x,
+      y: 0,
+      z: selectedObj.z,
+      rotY: selectedObj.rotY,
+      record: true,
+    });
+  };
+
+  const downloadJSON = () => {
+    const cam = controllerRef.current?.getCameraState();
+    const data: ExportData = {
+      version: 1,
+      questionId: present.questionId,
+      objects: present.objects,
+      ...(cam ? { camera: { x: cam.pos.x, y: cam.pos.y, z: cam.pos.z, tx: cam.target.x, ty: cam.target.y, tz: cam.target.z } } : {}),
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'scene.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const { state, camera } = parseExport(String(reader.result));
+        dispatch({ type: 'loadJSON', data: state });
+        if (camera) {
+          controllerRef.current?.setCameraState(
+            new THREE.Vector3(camera.x, camera.y, camera.z),
+            new THREE.Vector3(camera.tx, camera.ty, camera.tz),
+          );
         }
+      } catch {
+        alert('JSONファイルを読み込めませんでした');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
 
-        dragControls.addEventListener('drag', (event) => {
-            if (!event.object) return;
+  return (
+    <div className="app">
+      <div ref={containerRef} className="stage" />
 
-            if (isRightClick) {
-                if (originalX === undefined) {
-                    originalX = mouse.x;
-                    return;
-                }
-                
-                rotateAroundWorldAxis(event.object, new THREE.Vector3(0, 1, 0), (mouse.x - originalX)*rotationSensitivity);
+      <header className="topbar">
+        <h1>3D シミュレーション</h1>
+        <div className="top-actions">
+          <button onClick={() => controllerRef.current?.resetCamera()}>視点リセット</button>
+          <button className={rotateMode ? 'active' : ''} onClick={() => setRotateMode((m) => !m)} title="ONにすると左ドラッグで回転">
+            回転モード
+          </button>
+          <button onClick={undo} disabled={past.length === 0} title="元に戻す (Ctrl+Z)">
+            戻す
+          </button>
+          <button onClick={redo} disabled={future.length === 0} title="やり直す (Ctrl+Y)">
+            やり直す
+          </button>
+          <button onClick={downloadJSON}>JSON保存</button>
+          <button onClick={() => fileRef.current?.click()}>JSON読込</button>
+          <button className="help-btn" onClick={() => setHelpOpen(true)} title="使い方">
+            ?
+          </button>
+        </div>
+      </header>
+      <input ref={fileRef} type="file" accept=".json,application/json" hidden onChange={onFileChange} />
 
-                originalX = mouse.x;
-                return;
-            }
+      <aside className="panel left">
+        <h2>道具箱</h2>
+        {CATEGORIES.map((cat) => (
+          <section key={cat.id}>
+            <h3>{cat.label}</h3>
+            <div className="items">
+              {MODEL_DEFS.filter((d) => d.category === cat.id).map((def) => {
+                const count = countByKind.get(def.kind) ?? 0;
+                const disabled = count >= def.maxCount;
+                return (
+                  <button key={def.kind} className="item" disabled={disabled} onClick={() => addItem(def.kind)}>
+                    <span className="item-label">{def.label}</span>
+                    {def.sub && <span className="item-sub">{def.sub}</span>}
+                    <span className="item-count">
+                      {count}/{def.maxCount}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        ))}
+      </aside>
 
-            const intersection = getIntersection();
-            if (intersection) {
-                event.object.position.copy(intersection).sub(dragOffset);
-            }
-        });
+      <aside className="panel right">
+        <section>
+          <h2>問題</h2>
+          <div className="questions">
+            {QUESTIONS.map((q) => (
+              <button
+                key={q.id}
+                className={present.questionId === q.id ? 'active' : ''}
+                onClick={() => loadQuestion(q.id)}
+              >
+                Q{q.id}
+              </button>
+            ))}
+          </div>
+          <button onClick={clearScene} disabled={present.objects.length === 0} className="clear-btn">
+            シーンをクリア
+          </button>
+        </section>
 
-        dragControls.addEventListener('dragend', () => {
-            orbitControls.enabled = true;
-            dragOffset.set(0, 0, 0);
-        });
+        <section>
+          <h2>選択中のオブジェクト</h2>
+          {selectedObj ? (
+            <>
+              <p className="sel-name">
+                {MODEL_BY_KIND[selectedObj.kind].label}
+                {MODEL_BY_KIND[selectedObj.kind].sub ? ` (${MODEL_BY_KIND[selectedObj.kind].sub})` : ''}
+              </p>
+              <div className="row">
+                <button onClick={() => rotateSelected(-15)}>左回転</button>
+                <button onClick={() => rotateSelected(15)}>右回転</button>
+              </div>
+              <label className="row">
+                高さ
+                <input
+                  type="range"
+                  min={0}
+                  max={6}
+                  step={0.05}
+                  value={Math.max(0, Math.min(6, round1(selectedObj.y)))}
+                  onChange={(e) => onHeightChange(Number(e.target.value))}
+                  onPointerUp={commitHeight}
+                  onPointerLeave={commitHeight}
+                />
+                <span className="val">{round1(selectedObj.y)}m</span>
+              </label>
+              <div className="row">
+                <button onClick={snapToGround}>地面に置く</button>
+                <button className="danger" onClick={removeSelected}>
+                  削除
+                </button>
+              </div>
+            </>
+          ) : (
+            <p className="muted">オブジェクトをクリックして選択</p>
+          )}
+        </section>
 
-        // Animation loop
-        const animate = () => {
-            requestAnimationFrame(animate);
-            orbitControls.update();
-            renderer.render(scene, camera);
-        };
+        <section>
+          <h2>計測</h2>
+          <label className="row">
+            <input
+              type="checkbox"
+              checked={labelsVisible}
+              onChange={(e) => setLabelsVisible(e.target.checked)}
+            />
+            ラベルを表示
+          </label>
+          <label className="row">
+            <input
+              type="checkbox"
+              checked={debug.enabled}
+              onChange={(e) => setDebug((d) => ({ ...d, enabled: e.target.checked }))}
+            />
+            デバッグモード
+          </label>
+          <p className="muted">青線=向き、緑線=移動方向（主語→相手）</p>
+          {debug.enabled && (
+            <>
+              <label className="row">
+                主語
+                <select
+                  value={debug.subjectId ?? ''}
+                  onChange={(e) => setDebug((d) => ({ ...d, subjectId: e.target.value || null }))}
+                >
+                  <option value="">--</option>
+                  {persons.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {MODEL_BY_KIND[o.kind].label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="row">
+                相手
+                <select
+                  value={debug.targetId ?? ''}
+                  onChange={(e) => setDebug((d) => ({ ...d, targetId: e.target.value || null }))}
+                >
+                  <option value="">--</option>
+                  {persons.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {MODEL_BY_KIND[o.kind].label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {angle !== null && <p className="angle">主語の向き vs 移動方向: {angle}°</p>}
+            </>
+          )}
+        </section>
+      </aside>
 
-        animate();
-
-        // Handle window resize
-        const handleResize = () => {
-            if (!mountRef.current) return;
-            
-            camera.aspect = mountRef.current.clientWidth / mountRef.current.clientHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
-        };
-
-        window.addEventListener('resize', handleResize);
-
-        // Cleanup
-        return () => {
-            window.removeEventListener('resize', handleResize);
-            window.removeEventListener('mousedown', () => {});
-            window.removeEventListener('mouseup', () => {});
-            if (dragControls) dragControls.dispose();
-            if (mountRef.current) {
-                mountRef.current.removeChild(renderer.domElement);
-            }
-            // Dispose of GPU resources
-            scene.traverse((object) => {
-                if (object.isMesh) {
-                if (object.geometry) object.geometry.dispose();
-                if (object.material) {
-                    if (Array.isArray(object.material)) {
-                    object.material.forEach((material) => material.dispose());
-                    } else {
-                    object.material.dispose();//
-                    }
-                }
-                }
-            });
-        };
-
-    }, [isLoading, models]);
-
-    return <div ref={mountRef} style={{ width, height }} />;
-};
-
-export default App;
+      {helpOpen && (
+        <div className="modal" onClick={() => setHelpOpen(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <h2>使い方</h2>
+            <ul>
+              <li>左パネルの「道具箱」から人物や道具をクリックしてシーンに追加します。</li>
+              <li>左ドラッグ: 選択中のオブジェクトを地面に沿って移動</li>
+              <li>Shift+左ドラッグ: 上下方向にも移動（プレゼントを手に持たせるなど）</li>
+              <li>右ドラッグ、または「回転モード」ONで左ドラッグ: その場で回転</li>
+              <li>背景での左ドラッグ: 視点の回転 / ホイール: ズーム</li>
+              <li>オブジェクトをクリックで選択。右パネルで高さ・回転・削除を操作できます。</li>
+              <li>Ctrl+Z: 元に戻す / Ctrl+Y: やり直し</li>
+              <li>「JSON保存」でシーン全体を保存。「JSON読込」で再現できます。</li>
+            </ul>
+            <button onClick={() => setHelpOpen(false)}>閉じる</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
