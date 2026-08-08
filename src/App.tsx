@@ -34,20 +34,10 @@ const HISTORY_LIMIT = 100;
 
 const initialHistory: HistoryState = { past: [], present: { questionId: null, objects: [] }, future: [] };
 
-function mulberry32(a: number) {
-  return function () {
-    let t = (a += 0x6d2b79f5);
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
 let seq = 0;
 
-function createObject(kind: KindId, questionId: number | null): SceneObjectData {
+function createObject(kind: KindId): SceneObjectData {
   seq += 1;
-  const rnd = mulberry32(seq * 7919 + (questionId ?? 0) * 104729 + 12345);
   let x: number;
   let z: number;
   let rotY: number;
@@ -56,11 +46,11 @@ function createObject(kind: KindId, questionId: number | null): SceneObjectData 
     z = -4.2;
     rotY = 0;
   } else {
-    const angle = rnd() * Math.PI * 2;
-    const r = 1.0 + rnd() * 2.8;
+    const angle = Math.random() * Math.PI * 2;
+    const r = 1.0 + Math.random() * 2.8;
     x = Math.cos(angle) * r;
     z = Math.sin(angle) * r;
-    rotY = rnd() * Math.PI * 2;
+    rotY = Math.random() * Math.PI * 2;
   }
   return { id: `obj-${seq}`, kind, x, y: 0, z, rotY };
 }
@@ -68,7 +58,7 @@ function createObject(kind: KindId, questionId: number | null): SceneObjectData 
 function reducer(state: HistoryState, action: Action): HistoryState {
   switch (action.type) {
     case 'add': {
-      const obj = createObject(action.kind, state.present.questionId);
+      const obj = createObject(action.kind);
       const present = { ...state.present, objects: [...state.present.objects, obj] };
       return { past: [...state.past, state.present].slice(-HISTORY_LIMIT), present, future: [] };
     }
@@ -95,7 +85,7 @@ function reducer(state: HistoryState, action: Action): HistoryState {
     case 'loadQuestion': {
       const question = QUESTIONS.find((q) => q.id === action.n);
       if (!question) return state;
-      const objects = question.items.map((kind) => createObject(kind, action.n));
+      const objects = question.items.map((kind) => createObject(kind));
       const present = { questionId: action.n, objects };
       return { past: [...state.past, state.present].slice(-HISTORY_LIMIT), present, future: [] };
     }
