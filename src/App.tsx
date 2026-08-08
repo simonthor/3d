@@ -572,7 +572,7 @@ export default function App() {
                     <input
                       type="range"
                       min={0}
-                      max={6}
+                      max={3}
                       step={0.05}
                       value={Math.max(0, Math.min(6, round1(selectedObj.y)))}
                       onChange={(e) => onHeightChange(Number(e.target.value))}
