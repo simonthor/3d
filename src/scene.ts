@@ -18,12 +18,12 @@ export interface SceneObjectData {
 export interface DebugConfig {
   enabled: boolean;
   subjectId: string | null;
-  targetId: string | null;
 }
 
 export interface SceneControllerCallbacks {
   onSelect: (id: string | null) => void;
   onMove: (id: string, x: number, y: number, z: number, rotY: number) => void;
+  onViewChange?: () => void;
 }
 
 const BOUND = 15;
@@ -65,7 +65,7 @@ function makeLabelSprite(text: string): THREE.Sprite {
   const mat = new THREE.SpriteMaterial({ map: tex, transparent: true });
   const sprite = new THREE.Sprite(mat);
   const aspect = W / H;
-  const w = 0.55;
+  const w = 1.;
   sprite.scale.set(w, w / aspect, 1);
   sprite.position.set(0, 2.85, 0);
   return sprite;
@@ -93,7 +93,7 @@ export class SceneController {
   private intersection = new THREE.Vector3();
   private mouse = new THREE.Vector2();
 
-  private debug: DebugConfig = { enabled: false, subjectId: null, targetId: null };
+  private debug: DebugConfig = { enabled: false, subjectId: null };
   private selectedId: string | null = null;
   private rotateMode = false;
   private shiftHeld = false;
@@ -168,6 +168,10 @@ export class SceneController {
     this.orbit.dampingFactor = 0.08;
     this.orbit.target.set(0, 0, 0);
     this.orbit.maxPolarAngle = Math.PI * 0.49;
+    this.orbit.addEventListener('change', () => {
+      if (this.debug.enabled) this.updateDebugLines();
+      this.cb.onViewChange?.();
+    });
 
     this.renderer.domElement.addEventListener('pointerdown', this.onPointerDown);
     this.renderer.domElement.addEventListener('pointerup', this.onPointerUp);
@@ -347,8 +351,7 @@ export class SceneController {
     }
     if (!this.debug.enabled) return;
     const sub = this.debug.subjectId ? this.instances.get(this.debug.subjectId) : null;
-    const tgt = this.debug.targetId ? this.instances.get(this.debug.targetId) : null;
-    if (!sub || !tgt || sub === tgt) return;
+    if (!sub) return;
 
     const p0 = new THREE.Vector3(sub.position.x, 0.03, sub.position.z);
     const facing = facingVector(sub.userData.rotY ?? 0).multiplyScalar(2);
@@ -360,10 +363,18 @@ export class SceneController {
       ),
     );
 
-    const p2 = new THREE.Vector3(tgt.position.x, 0.03, tgt.position.z);
+    const camDir = new THREE.Vector3()
+      .subVectors(this.orbit.target, this.camera.position)
+      .setY(0)
+      .normalize()
+      .multiplyScalar(2);
+    const p2 = new THREE.Vector3(this.camera.position.x, 0.03, this.camera.position.z).add(camDir);
     this.lineGroup.add(
       new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints([p0, p2]),
+        new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(this.camera.position.x, 0.03, this.camera.position.z),
+          p2,
+        ]),
         new THREE.LineBasicMaterial({ color: 0x22aa44 }),
       ),
     );
