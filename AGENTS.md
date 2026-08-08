@@ -4,14 +4,12 @@ Guidance for AI agents working in this repository.
 
 ## Project
 
-Interactive 3D simulation web app for non-verbal communication research with children.
+Interactive 3D simulation web app.
 Users add people and props to a 3D stage, arrange them, and answer spatial-relationship
 questions. The app is Japanese-first (UI labels, help overlay).
 
 - Stack: React 19 + three.js 0.182 + Vite 7 + TypeScript.
 - Served under base path `/3d/` (set in `vite.config.ts` — keep it; CERN hosting uses this).
-- Spec: `RQ1_B_Non-verbal_3D_requests_v2.md` (Japanese). This is the source of truth for behavior.
-
 ## Commands
 
 ```bash

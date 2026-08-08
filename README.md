@@ -1,73 +1,65 @@
-# React + TypeScript + Vite
+# Interactive 3D simulation web app
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The UI is available in Japanese, English and Swedish.
 
-Currently, two official plugins are available:
+- Stack: React 19 + three.js 0.182 + Vite 7 + TypeScript.
+- Served under the base path `/3d/` (set in `vite.config.ts` — keep it; the CERN hosting uses it).
+- Behavior spec: `RQ1_B_Non-verbal_3D_requests_v2.docx` (Japanese). This is the source of truth for behavior.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Getting started
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+npm run dev   # dev server at http://localhost:5173/3d/
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Commands
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+| Command | Description |
+| --- | --- |
+| `npm run dev` | Dev server at http://localhost:5173/3d/ |
+| `npm run lint` | ESLint (`eslint .`; react-hooks rules enforced, keep it green) |
+| `npm run build` | Production build |
+| `npx tsc --noEmit` | Typecheck |
+| `npm run preview` | Preview the production build |
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## Project structure
+
+| Path | Purpose |
+| --- | --- |
+| `src/App.tsx` | UI (toolbox, question/selection/measurement panels, help modal), history reducer, angle calc, JSON export/import |
+| `src/scene.ts` | `SceneController`: three.js scene, model loading, drag/lift/rotate, pick/select, selection ring, debug lines |
+| `src/models.ts` | Asset registry: kind IDs, categories, model URLs, labels, max counts |
+| `src/i18n.ts` | UI strings for Japanese / English / Swedish |
+| `src/questions.ts` | 20 question presets (item lists; edit by hand) |
+| `public/3dmodels/*.glb` | Runtime models (Y-up) |
+| `scripts/*.py` | GLB generators; output goes to `public/3dmodels/` |
+
+## Scene state model
+
+- React state (`HistoryState` with `past`/`present`/`future`) is the single
+  source of truth; `SceneController.setObjects()` reconciles the three.js scene
+  from it.
+- Drags dispatch `move` actions; height-slider moves are `record: false` (not
+  pushed to history); all other mutations push history.
+- JSON export contains the full React scene state and re-creates it on import.
+
+## Model conventions
+
+- three.js is Y-up; the authoring scripts are Z-up. Final export rotates −90°
+  about X with the base at y=0.
+- Models face −Z at `rotY = 0`.
+- People are gender-neutral with eyes only; distinction comes from baked shirt
+  patterns and hats. Chest labels are runtime canvas sprites, not baked.
+
+## Regenerating models
+
+Scripts must be run with `uv`, never global pip. Scripts with a `# /// script`
+header run as `uv run <script>`; the older prop scripts run as:
+
+```bash
+uv run --no-project --with trimesh --with numpy <script>
 ```
+
+`make_person.py` additionally needs `--with Pillow` (canvas pattern textures).
+Always verify exported GLBs are Y-up (min-y ≈ 0) after regenerating.
