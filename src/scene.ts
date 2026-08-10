@@ -28,6 +28,7 @@ export interface SceneControllerCallbacks {
 const BOUND = 15;
 const MIN_Y = 0;
 const MAX_Y = 3;
+const CAMERA_DEFAULT = { pos: [0, 2.3, 12] as const, target: [0, 1.8, 0] as const };
 const ROTATION_SENSITIVITY = 8;
 const CLICK_THRESHOLD = 6;
 
@@ -83,6 +84,22 @@ function makeLabelSprite(text: string): THREE.Sprite {
 
 /** Clamps `v` into the inclusive range [lo, hi]. */
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+
+/**
+ * Clamps a position to stay within a horizontal disc of radius `r` around the
+ * origin, leaving the y component untouched.
+ * @param x The x coordinate.
+ * @param y The y coordinate (passed through unchanged).
+ * @param z The z coordinate.
+ * @param r The maximum radial distance from the origin.
+ * @returns A new vector with the y passed through and (x, z) inside the disc.
+ */
+function clampRadial(x: number, y: number, z: number, r: number): THREE.Vector3 {
+  const len = Math.hypot(x, z);
+  if (len <= r || len === 0) return new THREE.Vector3(x, y, z);
+  const s = r / len;
+  return new THREE.Vector3(x * s, y, z * s);
+}
 
 /**
  * Owns the three.js scene: renderer, camera, lights, ground, orbit/drag
@@ -160,7 +177,7 @@ export class SceneController {
     this.scene.environmentIntensity = 1;
 
     this.camera = new THREE.PerspectiveCamera(50, container.clientWidth / container.clientHeight, 0.1, 200);
-    this.camera.position.set(0, 9, 12);
+    this.camera.position.set(...CAMERA_DEFAULT.pos);
 
     this.scene.add(new THREE.AmbientLight(0xffffff, 0.6));
     const hemi = new THREE.HemisphereLight(0xffffff, 0xbbbbbb, 0.35);
@@ -169,15 +186,15 @@ export class SceneController {
     dir.position.set(6, 12, 8);
     dir.castShadow = true;
     dir.shadow.mapSize.set(2048, 2048);
-    dir.shadow.camera.left = -14;
-    dir.shadow.camera.right = 14;
-    dir.shadow.camera.top = 14;
-    dir.shadow.camera.bottom = -14;
+    dir.shadow.camera.left = -16;
+    dir.shadow.camera.right = 16;
+    dir.shadow.camera.top = 16;
+    dir.shadow.camera.bottom = -16;
     dir.shadow.camera.far = 40;
     this.scene.add(dir);
 
     const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(30, 30),
+      new THREE.CircleGeometry(BOUND, 64),
       new THREE.MeshLambertMaterial({ color: 0xe9e7e2 }),
     );
     ground.rotation.x = -Math.PI / 2;
@@ -189,7 +206,7 @@ export class SceneController {
     this.orbit = new OrbitControls(this.camera, this.renderer.domElement);
     this.orbit.enableDamping = true;
     this.orbit.dampingFactor = 0.08;
-    this.orbit.target.set(0, 0, 0);
+    this.orbit.target.set(...CAMERA_DEFAULT.target);
     this.orbit.maxPolarAngle = Math.PI * 0.49;
     this.orbit.addEventListener('change', () => {
       if (this.debug.enabled) this.updateDebugLines();
@@ -298,8 +315,8 @@ export class SceneController {
 
   /** Resets the camera position and orbit target to their defaults. */
   resetCamera() {
-    this.camera.position.set(0, 9, 12);
-    this.orbit.target.set(0, 0, 0);
+    this.camera.position.set(...CAMERA_DEFAULT.pos);
+    this.orbit.target.set(...CAMERA_DEFAULT.target);
     this.orbit.update();
   }
 
@@ -523,14 +540,11 @@ export class SceneController {
       const inter = this.groundIntersect();
       if (inter) {
         const p = inter.sub(this.dragOffset);
-        group.position.set(clamp(p.x, -BOUND, BOUND), this.originalY, clamp(p.z, -BOUND, BOUND));
+        group.position.copy(clampRadial(p.x, this.originalY, p.z, BOUND));
       }
     } else if (this.dragMode === 'free') {
-      group.position.set(
-        clamp(group.position.x, -BOUND, BOUND),
-        clamp(group.position.y, MIN_Y, MAX_Y),
-        clamp(group.position.z, -BOUND, BOUND),
-      );
+      group.position.copy(clampRadial(group.position.x, group.position.y, group.position.z, BOUND));
+      group.position.y = clamp(group.position.y, MIN_Y, MAX_Y);
     }
     this.updateSelectionRing();
     this.updateDebugLines();

@@ -5,12 +5,10 @@ import { SceneController } from './scene';
 import type { DebugConfig, SceneObjectData } from './scene';
 import { CATEGORIES, MODEL_BY_KIND, MODEL_DEFS } from './models';
 import type { KindId } from './models';
-import { QUESTIONS } from './questions';
 import { CATEGORY_TEXT, KIND_TEXT, LANGS, facingVsCamera, t } from './i18n';
 import type { Lang } from './i18n';
 
 interface SceneState {
-  questionId: number | null;
   objects: SceneObjectData[];
 }
 
@@ -25,14 +23,13 @@ type Action =
   | { type: 'remove'; id: string }
   | { type: 'move'; id: string; x: number; y: number; z: number; rotY: number; record: boolean }
   | { type: 'clear' }
-  | { type: 'loadQuestion'; n: number }
   | { type: 'loadJSON'; data: SceneState }
   | { type: 'undo' }
   | { type: 'redo' };
 
 const HISTORY_LIMIT = 100;
 
-const initialHistory: HistoryState = { past: [], present: { questionId: null, objects: [] }, future: [] };
+const initialHistory: HistoryState = { past: [], present: { objects: [] }, future: [] };
 
 let seq = 0;
 
@@ -62,9 +59,9 @@ function createObject(kind: KindId): SceneObjectData {
 }
 
 /**
- * Pure reducer implementing add/remove/move/clear/loadQuestion/loadJSON/undo/
- * redo over the scene history. Non-recorded moves update the present state
- * without pushing to the history stack.
+ * Pure reducer implementing add/remove/move/clear/loadJSON/undo/redo over the
+ * scene history. Non-recorded moves update the present state without pushing
+ * to the history stack.
  * @param state The current history state.
  * @param action The action to apply.
  * @returns The new history state.
@@ -93,14 +90,7 @@ function reducer(state: HistoryState, action: Action): HistoryState {
     }
     case 'clear': {
       if (state.present.objects.length === 0) return state;
-      const present = { questionId: state.present.questionId, objects: [] };
-      return { past: [...state.past, state.present].slice(-HISTORY_LIMIT), present, future: [] };
-    }
-    case 'loadQuestion': {
-      const question = QUESTIONS.find((q) => q.id === action.n);
-      if (!question) return state;
-      const objects = question.items.map((kind) => createObject(kind));
-      const present = { questionId: action.n, objects };
+      const present = { objects: [] };
       return { past: [...state.past, state.present].slice(-HISTORY_LIMIT), present, future: [] };
     }
     case 'loadJSON': {
@@ -129,7 +119,6 @@ function reducer(state: HistoryState, action: Action): HistoryState {
 
 interface ExportData {
   version: 1;
-  questionId: number | null;
   objects: SceneObjectData[];
   cameraAngles?: Record<string, number>;
   camera?: { x: number; y: number; z: number; tx: number; ty: number; tz: number };
@@ -177,7 +166,6 @@ function parseExport(text: string): {
       : undefined;
   return {
     state: {
-      questionId: typeof data.questionId === 'number' ? data.questionId : null,
       objects,
     },
     camera,
@@ -190,7 +178,7 @@ function parseExport(text: string): {
 const round1 = (v: number) => Math.round(v * 10) / 10;
 
 /**
- * Root UI component: wires the toolbox/questions/selection panels to the
+ * Root UI component: wires the toolbox/settings/selection panels to the
  * SceneController and manages undo/redo history, language and JSON import/export.
  */
 export default function App() {
@@ -295,8 +283,6 @@ export default function App() {
   const addItem = (kind: KindId) => dispatch({ type: 'add', kind });
   /** Clears the whole scene. */
   const clearScene = () => dispatch({ type: 'clear' });
-  /** Loads the preset for question `n` onto the stage. */
-  const loadQuestion = (n: number) => dispatch({ type: 'loadQuestion', n });
   /** Undoes the last recorded action. */
   const undo = () => dispatch({ type: 'undo' });
   /** Redoes the last undone action. */
@@ -400,7 +386,6 @@ export default function App() {
     const cam = controllerRef.current?.getCameraState() ?? null;
     const data: ExportData = {
       version: 1,
-      questionId: present.questionId,
       objects: present.objects,
       cameraAngles: cameraAngles ?? undefined,
       labelsVisible,
@@ -522,22 +507,11 @@ export default function App() {
           >
             {rightOpen ? '›' : '‹'}
           </button>
-          <span>{t(lang, 'questions')}</span>
+          <span>{t(lang, 'settings')}</span>
         </h2>
         {rightOpen && (
           <div className="panel-body">
             <section>
-              <div className="questions">
-                {QUESTIONS.map((q) => (
-                  <button
-                    key={q.id}
-                    className={present.questionId === q.id ? 'active' : ''}
-                    onClick={() => loadQuestion(q.id)}
-                  >
-                    Q{q.id}
-                  </button>
-                ))}
-              </div>
               <button onClick={clearScene} disabled={present.objects.length === 0} className="clear-btn">
                 {t(lang, 'clearScene')}
               </button>

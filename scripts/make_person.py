@@ -36,6 +36,58 @@ HAT_RED = [190, 40, 40, 255]
 HAT_BLUE = [45, 90, 180, 255]
 HAT_GREEN = [70, 150, 70, 255]
 
+def pattern_parts(pattern, pattern_color, torso_w, torso_d, torso_h, torso_z, cell_d, side):
+    """Builds the pattern tiles on one side of the torso (side=+1 front, -1 back).
+
+    Tiles are thin boxes laid on the given face (normal along +/-y), so the
+    pattern is visible on both front and back of the person.
+    """
+    parts = []
+    y = side * (torso_d / 2 + cell_d / 2)
+    if pattern == "stripes":
+        n = 6
+        cw = torso_w / n
+        for i in range(n):
+            if i % 2 == 1:
+                x = -torso_w / 2 + cw * (i + 0.5)
+                parts.append(box((cw - 0.01, cell_d, torso_h * 0.82), (x, y, torso_z), pattern_color))
+    elif pattern == "horiz":
+        n = 5
+        ch = torso_h * 0.82 / n
+        for i in range(n):
+            if i % 2 == 1:
+                z = torso_z - torso_h * 0.41 + ch * (i + 0.5)
+                parts.append(box((torso_w - 0.01, cell_d, ch), (0, y, z), pattern_color))
+    elif pattern == "polka":
+        cols, rows = 3, 4
+        cell = 0.1
+        for r in range(rows):
+            for c in range(cols):
+                x = -torso_w / 2 + (c + 0.5) * (torso_w / cols)
+                z = torso_z - torso_h / 2 + (r + 0.5) * (torso_h * 0.9 / rows) + 0.05
+                parts.append(box((cell, cell_d, cell), (x, y, z), pattern_color))
+    elif pattern == "diag":
+        cols, rows = 6, 5
+        cw = torso_w / cols
+        ch = torso_h * 0.85 / rows
+        for r in range(rows):
+            for c in range(cols):
+                if (r + c) % 3 < 2:
+                    x = -torso_w / 2 + (c + 0.5) * cw
+                    z = torso_z - torso_h * 0.85 / 2 + (r + 0.5) * ch
+                    parts.append(box((cw - 0.015, cell_d, ch - 0.02), (x, y, z), pattern_color))
+    elif pattern == "check":
+        cols, rows = 4, 3
+        cw = torso_w / cols
+        ch = torso_h / rows
+        for r in range(rows):
+            for c in range(cols):
+                if (r + c) % 2 == 1:
+                    x = -torso_w / 2 + (c + 0.5) * cw
+                    z = torso_z - torso_h / 2 + (r + 0.5) * ch
+                    parts.append(box((cw - 0.015, cell_d, ch - 0.02), (x, y, z), pattern_color))
+    return parts
+
 def build_person(shirt, pattern, pattern_color, hat_color):
     parts = []
 
@@ -59,35 +111,12 @@ def build_person(shirt, pattern, pattern_color, hat_color):
     hem_h = 0.12
     parts.append(box((torso_w + 0.04, torso_d + 0.04, hem_h), (0, 0, leg_h + hem_h / 2 - 0.02), shirt))
 
-    # Pattern on the front of the torso (front face = +y, as eyes are at +y)
+    # Pattern tiles on both the front (+y, where the eyes are) and the back (-y)
+    # of the torso, so people are distinguishable even when facing away.
     if pattern is not None:
-        front_y = torso_d / 2
         cell_d = 0.02
-        if pattern == "stripes":
-            n = 6
-            cw = torso_w / n
-            for i in range(n):
-                if i % 2 == 1:
-                    x = -torso_w / 2 + cw * (i + 0.5)
-                    parts.append(box((cw - 0.01, cell_d, torso_h * 0.82), (x, front_y + cell_d / 2, torso_z), pattern_color))
-        elif pattern == "polka":
-            cols, rows = 3, 4
-            cell = 0.1
-            for r in range(rows):
-                for c in range(cols):
-                    x = -torso_w / 2 + (c + 0.5) * (torso_w / cols)
-                    z = torso_z - torso_h / 2 + (r + 0.5) * (torso_h * 0.9 / rows) + 0.05
-                    parts.append(box((cell, cell_d, cell), (x, front_y + cell_d / 2, z), pattern_color))
-        elif pattern == "check":
-            cols, rows = 4, 3
-            cw = torso_w / cols
-            ch = torso_h / rows
-            for r in range(rows):
-                for c in range(cols):
-                    if (r + c) % 2 == 1:
-                        x = -torso_w / 2 + (c + 0.5) * cw
-                        z = torso_z - torso_h / 2 + (r + 0.5) * ch
-                        parts.append(box((cw - 0.015, cell_d, ch - 0.02), (x, front_y + cell_d / 2, z), pattern_color))
+        parts.extend(pattern_parts(pattern, pattern_color, torso_w, torso_d, torso_h, torso_z, cell_d, +1))
+        parts.extend(pattern_parts(pattern, pattern_color, torso_w, torso_d, torso_h, torso_z, cell_d, -1))
 
     # Arms (short sleeve: shoulder portion shirt, forearm+hand skin)
     sleeve_w, sleeve_d, sleeve_h = 0.26, 0.26, 0.28
@@ -148,11 +177,11 @@ def build_person(shirt, pattern, pattern_color, hat_color):
 
 PERSONS = [
     ("me", SHIRT_BLUE, None, None, None),
-    ("you", SHIRT_GREEN, None, None, None),
+    ("you", SHIRT_GREEN, "diag", PATTERN_DARK, None),
     ("person_a", SHIRT_RED, "stripes", PATTERN_WHITE, HAT_BLUE),
     ("person_b", SHIRT_ORANGE, "polka", PATTERN_DARK, HAT_GREEN),
     ("person_c", SHIRT_WHITE, "check", PATTERN_RED, HAT_RED),
-    ("family", SHIRT_PURPLE, None, None, None),
+    ("family", SHIRT_PURPLE, "horiz", PATTERN_DARK, None),
 ]
 
 for name, shirt, pattern, pattern_color, hat_color in PERSONS:

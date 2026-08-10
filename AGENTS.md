@@ -21,10 +21,9 @@ Verify `lint` + `build` (and `tsc --noEmit`) after any source change.
 
 | File | Purpose |
 | --- | --- |
-| `src/App.tsx` | UI (toolbox, question/selection/measurement panels, help modal), history reducer, angle calc, JSON export/import |
+| `src/App.tsx` | UI (toolbox, settings/selection/measurement panels, help modal), history reducer, angle calc, JSON export/import |
 | `src/scene.ts` | `SceneController`: three.js scene, model loading, drag/lift/rotate, pick/select, selection ring, debug lines |
 | `src/models.ts` | Asset registry: kind IDs, categories, model URLs, labels, max counts |
-| `src/questions.ts` | 20 question presets (placeholder item lists; edit by hand) |
 | `public/3dmodels/*.glb` | Runtime models (Y-up) |
 | `scripts/*.py` | GLB generators; write output to `public/3dmodels/` |
 
@@ -39,12 +38,16 @@ Verify `lint` + `build` (and `tsc --noEmit`) after any source change.
 
 - **three.js is Y-up**; the authoring scripts are Z-up. Final export rotates −90° about X with the
   base at y=0. Ground is the y=0 plane; a person is ~2.5 tall, the school ~3.15.
+- The ground is a **circle of radius `BOUND=15`**; object x/z are clamped radially
+  (`clampRadial` in `scene.ts`) so they can never leave the disc. Y is clamped to `[0, 6]`.
+  Objects spawn at `y=0` (the floor), the lowest allowed state.
+- Default/reset camera is at **eye level** (`CAMERA_DEFAULT` in `scene.ts`): position
+  `(0, 2.3, 12)`, orbit target `(0, 1.8, 0)` — a person's eyes sit at ≈2.3.
 - Models face **−Z at rotY=0**. Facing vector: `(-sin(rotY), 0, -cos(rotY))`. Use this in angle math.
 - People are gender-neutral with **eyes only (no nose)**; distinction is via baked shirt patterns
-  (stripes/polka/check) and hats (A/B/C only). Chest labels are runtime canvas sprites
-  (`labelText` in models.ts), not baked.
-- Placements clamp to `BOUND=15`, Y in `[0, 6]` (constants in `scene.ts`). Objects spawn at
-  `y=0` (the floor), the lowest allowed state.
+  and hats (A/B/C only). Patterns are baked on **both** front and back of the torso:
+  me/You plain, You diagonal stripes, family horizontal stripes, A vertical stripes, B polka dots,
+  C check. Chest labels are runtime canvas sprites (`labelText` in models.ts), not baked.
 
 ## Regenerating models
 
@@ -56,7 +59,7 @@ Scripts must be run with `uv`, never global pip. Scripts with a `# /// script` h
 uv run --no-project --with trimesh --with numpy <script>
 ```
 
-`make_person.py` needs `--with trimesh --with numpy --with Pillow` (canvas pattern textures).
+`make_person.py` runs via its `# /// script` header (`uv run make_person.py`).
 Always verify exported GLBs are Y-up afterward (min-y ≈ 0), e.g. with a trimesh bounds check.
 
 ## Conventions
