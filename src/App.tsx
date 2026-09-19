@@ -170,7 +170,7 @@ function parseExport(text: string): {
     },
     camera,
     labelsVisible: data.labelsVisible === undefined ? true : !!data.labelsVisible,
-    lang: data.lang === 'ja' || data.lang === 'en' || data.lang === 'sv' ? data.lang : 'ja',
+    lang: data.lang === 'ja' || data.lang === 'en' || data.lang === 'sv' ? data.lang : 'en',
   };
 }
 
@@ -192,7 +192,7 @@ export default function App() {
   const [debug, setDebug] = useState<DebugConfig>({ enabled: false });
   const [cam, setCam] = useState<{ pos: THREE.Vector3; target: THREE.Vector3 } | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
-  const [lang, setLang] = useState<Lang>('ja');
+  const [lang, setLang] = useState<Lang>('en');
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
 
@@ -610,6 +610,7 @@ export default function App() {
               <li>{t(lang, 'helpShift')}</li>
               <li>{t(lang, 'helpRotate')}</li>
               <li>{t(lang, 'helpOrbit')}</li>
+              <li>{t(lang, 'helpPan')}</li>
               <li>{t(lang, 'helpTouch')}</li>
               <li>{t(lang, 'helpSelect')}</li>
               <li>{t(lang, 'helpUndo')}</li>
