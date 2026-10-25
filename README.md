@@ -49,8 +49,8 @@ npm run dev   # dev server at http://localhost:5173/3d/
 - three.js is Y-up; the authoring scripts are Z-up. Final export rotates −90°
   about X with the base at y=0.
 - Models face −Z at `rotY = 0`.
-- People are gender-neutral with eyes only; distinction comes from baked shirt
-  patterns and hats. Chest labels are runtime canvas sprites, not baked.
+- People are gender-neutral with eyes only; distinction comes only from baked shirt
+  patterns (no hats). Chest labels are runtime canvas sprites, not baked.
 
 ## Regenerating models
 

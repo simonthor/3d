@@ -126,10 +126,6 @@ PATTERN_WHITE = [245, 245, 245, 255]
 PATTERN_DARK = [35, 45, 75, 255]
 PATTERN_RED = [190, 30, 40, 255]
 
-HAT_RED = [190, 40, 40, 255]
-HAT_BLUE = [45, 90, 180, 255]
-HAT_GREEN = [70, 150, 70, 255]
-
 def pattern_parts(pattern, pattern_color, torso_w, torso_d, torso_h, torso_z, cell_d, side):
     """Builds the pattern tiles on one side of the torso (side=+1 front, -1 back).
 
@@ -154,12 +150,19 @@ def pattern_parts(pattern, pattern_color, torso_w, torso_d, torso_h, torso_z, ce
                 z = torso_z - torso_h * 0.41 + ch * (i + 0.5)
                 parts.append(box((torso_w - 0.01, cell_d, ch), (0, y, z), pattern_color))
     elif pattern == "polka":
-        # 3x3 squares in a band around the chest, clear of the shirt's top and bottom
-        cell = 0.1
+        # 3x3 round dots (thin discs facing +/-y) in a band around the chest,
+        # clear of the shirt's top and bottom
+        dot_r = 0.06
+        to_y = trimesh.transformations.rotation_matrix(np.radians(90), [1, 0, 0])
         for dz in (-0.2, 0, 0.2):
             for c in range(3):
                 x = -torso_w / 2 + (c + 0.5) * (torso_w / 3)
-                parts.append(box((cell, cell_d, cell), (x, y, torso_z + dz), pattern_color))
+                m = trimesh.creation.cylinder(radius=dot_r, height=cell_d, sections=32, transform=to_y)
+                m.apply_translation((x, y, torso_z + dz))
+                m.unmerge_vertices()
+                m.vertex_normals = m.face_normals.repeat(3, axis=0)
+                m.visual = trimesh.visual.ColorVisuals(m, vertex_colors=np.tile(np.array(pattern_color, dtype=np.uint8), (len(m.vertices), 1)))
+                parts.append(m)
     elif pattern == "diag":
         # 45 degree stripes u - v = k (u across, v up the panel), each clipped to the
         # panel rectangle: the clipped stripe is the convex hull of the panel corners
@@ -191,7 +194,7 @@ def pattern_parts(pattern, pattern_color, torso_w, torso_d, torso_h, torso_z, ce
                     parts.append(box((cw - 0.015, cell_d, ch - 0.02), (x, y, z), pattern_color))
     return parts
 
-def build_person(shirt, pattern, pattern_color, hat_color):
+def build_person(shirt, pattern, pattern_color):
     parts = []
 
     # Legs (cylinders)
@@ -268,24 +271,6 @@ def build_person(shirt, pattern, pattern_color, hat_color):
     parts.append(sphere(hair_r, (0, 0, head_z), HAIR, segments=10,
                         cut=((0, -0.09 / hair_r, 1), -0.01)))
 
-    # Hat (optional): cap dome over the hair and a flat visor sticking out only
-    # at the front (a half ellipse starting inside the dome). The dome is a half
-    # ellipsoid whose widest point is its rim, so the sides go straight down to
-    # the rim, which is horizontal, just above the eyes and level with the
-    # visor's underside.
-    if hat_color is not None:
-        brim_t = 0.017
-        brim_z, brim_y0, brim_w, brim_l = head_z + 0.09, 0.12, 0.21, 0.29
-        dome = sphere(1, (0, 0, 0), hat_color, segments=10, cut=((0, 0, 1), 0))
-        scale = np.array([head_r + 0.025, head_r + 0.025, 0.22])
-        normals = dome.vertex_normals / scale
-        dome = trimesh.Trimesh(dome.vertices * scale + (0, 0, brim_z - brim_t), dome.faces,
-                               vertex_normals=normals / np.linalg.norm(normals, axis=1, keepdims=True), process=False)
-        dome.visual = trimesh.visual.ColorVisuals(dome, vertex_colors=np.tile(np.array(hat_color, dtype=np.uint8), (len(dome.vertices), 1)))
-        parts.append(dome)
-        brim = [(brim_w * np.cos(a), brim_y0 + brim_l * np.sin(a), brim_z) for a in np.linspace(0, np.pi, 16)]
-        parts.append(rounded_hull(brim, brim_t, hat_color, segments=2))
-
     # Eyes (small dark spheres on the front of the head, front = +y direction)
     eye_r = 0.04
     for side in (-1, 1):
@@ -305,15 +290,15 @@ def build_person(shirt, pattern, pattern_color, hat_color):
     return mesh
 
 PERSONS = [
-    ("me", SHIRT_BLUE, None, None, None),
-    ("you", SHIRT_GREEN, "diag", PATTERN_DARK, None),
-    ("person_a", SHIRT_RED, "stripes", PATTERN_WHITE, HAT_BLUE),
-    ("person_b", SHIRT_ORANGE, "polka", PATTERN_DARK, HAT_GREEN),
-    ("person_c", SHIRT_WHITE, "check", PATTERN_RED, HAT_RED),
-    ("family", SHIRT_PURPLE, "horiz", PATTERN_DARK, None),
+    ("me", SHIRT_BLUE, None, None),
+    ("you", SHIRT_GREEN, "diag", PATTERN_DARK),
+    ("person_a", SHIRT_RED, "stripes", PATTERN_WHITE),
+    ("person_b", SHIRT_ORANGE, "polka", PATTERN_DARK),
+    ("person_c", SHIRT_WHITE, "check", PATTERN_RED),
+    ("family", SHIRT_PURPLE, "horiz", PATTERN_DARK),
 ]
 
-for name, shirt, pattern, pattern_color, hat_color in PERSONS:
-    mesh = build_person(shirt, pattern, pattern_color, hat_color)
+for name, shirt, pattern, pattern_color in PERSONS:
+    mesh = build_person(shirt, pattern, pattern_color)
     mesh.export(f"../public/3dmodels/{name}.glb", include_normals=True)
     print(f"Exported {name}.glb  bounds: {[round(v, 3) for v in mesh.bounds.flatten()]}  verts: {len(mesh.vertices)} faces: {len(mesh.faces)}")

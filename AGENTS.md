@@ -44,10 +44,10 @@ Verify `lint` + `build` (and `tsc --noEmit`) after any source change.
 - Default/reset camera is at **eye level** (`CAMERA_DEFAULT` in `scene.ts`): position
   `(0, 2.3, 12)`, orbit target `(0, 1.8, 0)` — a person's eyes sit at ≈2.3.
 - Models face **−Z at rotY=0**. Facing vector: `(-sin(rotY), 0, -cos(rotY))`. Use this in angle math.
-- People are gender-neutral with **eyes only (no nose)**; distinction is via baked shirt patterns
-  and hats (A/B/C only). Patterns are baked on **both** front and back of the torso:
-  me/You plain, You diagonal stripes, family horizontal stripes, A vertical stripes, B polka dots,
-  C check. Chest labels are runtime canvas sprites (`labelText` in models.ts), not baked.
+- People are gender-neutral with **eyes only (no nose)**; distinction is only via baked shirt patterns
+  (no hats; faces/bodies are identical). Patterns are baked on **both** front and back of the torso:
+  me plain, You diagonal stripes, family horizontal stripes, A vertical stripes, B round polka dots,
+  C check. Chest labels are runtime canvas sprites (`labelText` in i18n.ts), not baked.
 - People are built from round primitives in `make_person.py`: sphere head/hands/eyes, cylinder
   legs/arms/neck, quarter-cylinder shoulders, and a rounded-box torso so the patterns sit on its flat
   front/back. All come from `rounded_hull` (convex hull of spheres around core points) with exported
