@@ -2,17 +2,111 @@
 # requires-python = ">=3.14"
 # dependencies = [
 #     "numpy>=2.5.1",
+#     "scipy",
 #     "trimesh>=5.0.0",
 # ]
 # ///
 import trimesh
 import numpy as np
+from scipy.spatial import ConvexHull
 
 def box(size, translation, color, thickness=1.0):
     m = trimesh.creation.box(extents=(size[0] * thickness, size[1] * thickness, size[2] * thickness))
     m.apply_translation(translation)
+    # One vertex per face corner, so the exported normals are the flat face normals.
+    m.unmerge_vertices()
+    m.vertex_normals = m.face_normals.repeat(3, axis=0)
     m.visual = trimesh.visual.ColorVisuals(m, vertex_colors=np.tile(np.array(color, dtype=np.uint8), (len(m.vertices), 1)))
     return m
+
+def sphere_dirs(segments):
+    """Unit directions from a subdivided cube projected onto the sphere.
+
+    `segments` is even, so the axis directions and the coordinate-plane great
+    circles are included; this keeps the flat faces of `rounded_box` exactly flat.
+    """
+    g = np.linspace(-1, 1, segments + 1)
+    u, v = (a.ravel() for a in np.meshgrid(g, g))
+    faces = []
+    for a, b, c in ((0, 1, 2), (1, 2, 0), (2, 0, 1)):
+        for sign in (-1, 1):
+            p = np.zeros((len(u), 3))
+            p[:, a], p[:, b], p[:, c] = sign, u, v
+            faces.append(p)
+    d = np.unique(np.vstack(faces), axis=0)
+    return d / np.linalg.norm(d, axis=1, keepdims=True)
+
+def rounded_hull(core, radius, color, segments=4, adjust=None, closest=None):
+    """Convex hull of spheres of `radius` around the `core` points (the core shape inflated by `radius`).
+
+    Every hull vertex is a core point plus `radius` times a sphere direction d,
+    and d is used as its normal. That is exact when the core points are corners
+    (boxes, single points), so the shading is smooth on curved parts and flat on
+    flat parts. For a core sampled along a curve (cylinder rings, arcs) d is only
+    the nearest sampled direction, which looks banded; pass `closest`, mapping
+    points to the nearest point of the solid core shape, to use the exact normal
+    instead. `adjust` optionally maps the sample (points, normals) to new ones
+    before the hull is taken, e.g. to cut a sphere down to a cap.
+    """
+    d = sphere_dirs(segments)
+    core = np.atleast_2d(np.asarray(core, dtype=float))
+    points = (core[:, None, :] + radius * d[None]).reshape(-1, 3)
+    normals = np.tile(d, (len(core), 1))
+    if adjust is not None:
+        points, normals = adjust(points, normals)
+    hull = ConvexHull(points)
+    used, faces = np.unique(hull.simplices, return_inverse=True)
+    normals = normals[used]
+    if closest is not None:
+        normals = points[used] - closest(points[used])
+        normals /= np.linalg.norm(normals, axis=1, keepdims=True)
+    faces = faces.reshape(-1, 3)
+    tri = points[used][faces]
+    flip = np.einsum("ij,ij->i", np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0]), hull.equations[:, :3]) < 0
+    faces[flip] = faces[flip][:, ::-1]
+    m = trimesh.Trimesh(points[used], faces, vertex_normals=normals, process=False)
+    m.visual = trimesh.visual.ColorVisuals(m, vertex_colors=np.tile(np.array(color, dtype=np.uint8), (len(m.vertices), 1)))
+    return m
+
+def rounded_box(size, translation, color, radius):
+    inner = np.array(size, dtype=float) / 2 - radius
+    corners = [np.array(translation) + inner * (sx, sy, sz) for sx in (-1, 1) for sy in (-1, 1) for sz in (-1, 1)]
+    return rounded_hull(corners, radius, color, segments=4)
+
+def cylinder(radius, z0, z1, xy, color, edge=0.03, sections=24):
+    """Vertical cylinder from z0 to z1 at (x, y) = `xy`, with edges rounded by `edge`."""
+    t = np.linspace(0, 2 * np.pi, sections, endpoint=False)
+    ring = np.column_stack([xy[0] + (radius - edge) * np.cos(t), xy[1] + (radius - edge) * np.sin(t)])
+    core = [(x, y, z) for z in (z0 + edge, z1 - edge) for x, y in ring]
+
+    def closest(p):
+        rel = p[:, :2] - xy
+        scale = np.minimum(1, (radius - edge) / np.maximum(np.linalg.norm(rel, axis=1), 1e-9))
+        return np.column_stack([xy + rel * scale[:, None], np.clip(p[:, 2], z0 + edge, z1 - edge)])
+
+    return rounded_hull(core, edge, color, segments=2, closest=closest)
+
+def sphere(radius, center, color, segments=8, cut=None):
+    """Sphere; with cut=(n, h) only the cap n . (p - center) >= h is kept.
+
+    Sample points below the plane are moved onto the circle where the plane
+    meets the sphere, so the rim of the cap lies exactly in the plane.
+    """
+    adjust = None
+    if cut is not None:
+        n = np.asarray(cut[0], dtype=float)
+        h = cut[1] / np.linalg.norm(n)
+        n = n / np.linalg.norm(n)
+
+        def adjust(points, normals):
+            rel = points - center
+            below = rel @ n < h
+            side = rel[below] - np.outer(rel[below] @ n, n)
+            side = side[np.linalg.norm(side, axis=1) > 1e-9]
+            rim = h * n + np.sqrt(radius**2 - h**2) * side / np.linalg.norm(side, axis=1, keepdims=True)
+            return np.vstack([points[~below], center + rim]), np.vstack([normals[~below], rim / radius])
+
+    return rounded_hull([center], radius, color, segments, adjust)
 
 # Colors (RGBA)
 SKIN = [222, 184, 158, 255]
@@ -45,7 +139,8 @@ def pattern_parts(pattern, pattern_color, torso_w, torso_d, torso_h, torso_z, ce
     parts = []
     y = side * (torso_d / 2 + cell_d / 2)
     if pattern == "stripes":
-        n = 6
+        # Odd number of columns, so the stripes (odd columns) are symmetric about the centre
+        n = 7
         cw = torso_w / n
         for i in range(n):
             if i % 2 == 1:
@@ -59,109 +154,143 @@ def pattern_parts(pattern, pattern_color, torso_w, torso_d, torso_h, torso_z, ce
                 z = torso_z - torso_h * 0.41 + ch * (i + 0.5)
                 parts.append(box((torso_w - 0.01, cell_d, ch), (0, y, z), pattern_color))
     elif pattern == "polka":
-        cols, rows = 3, 4
+        # 3x3 squares in a band around the chest, clear of the shirt's top and bottom
         cell = 0.1
-        for r in range(rows):
-            for c in range(cols):
-                x = -torso_w / 2 + (c + 0.5) * (torso_w / cols)
-                z = torso_z - torso_h / 2 + (r + 0.5) * (torso_h * 0.9 / rows) + 0.05
-                parts.append(box((cell, cell_d, cell), (x, y, z), pattern_color))
+        for dz in (-0.2, 0, 0.2):
+            for c in range(3):
+                x = -torso_w / 2 + (c + 0.5) * (torso_w / 3)
+                parts.append(box((cell, cell_d, cell), (x, y, torso_z + dz), pattern_color))
     elif pattern == "diag":
-        cols, rows = 6, 5
-        cw = torso_w / cols
-        ch = torso_h * 0.85 / rows
-        for r in range(rows):
-            for c in range(cols):
-                if (r + c) % 3 < 2:
-                    x = -torso_w / 2 + (c + 0.5) * cw
-                    z = torso_z - torso_h * 0.85 / 2 + (r + 0.5) * ch
-                    parts.append(box((cw - 0.015, cell_d, ch - 0.02), (x, y, z), pattern_color))
+        # 45 degree stripes u - v = k (u across, v up the panel), each clipped to the
+        # panel rectangle: the clipped stripe is the convex hull of the panel corners
+        # inside the stripe and the points where the stripe edges cross the panel edges.
+        hw, hh = torso_w / 2, torso_h * 0.85 / 2
+        period, stripe_w = 0.2, 0.1
+        for k in np.arange(-hw - hh, hw + hh, period):
+            pts = [(u, v) for u in (-hw, hw) for v in (-hh, hh) if abs(u - v - k) <= stripe_w / 2]
+            for e in (k - stripe_w / 2, k + stripe_w / 2):
+                pts += [(u, u - e) for u in (-hw, hw) if abs(u - e) <= hh]
+                pts += [(v + e, v) for v in (-hh, hh) if abs(v + e) <= hw]
+            if len(set(pts)) < 3:
+                continue
+            prism = [(u, y + dy, torso_z + v) for u, v in pts for dy in (-cell_d / 2, cell_d / 2)]
+            m = trimesh.convex.convex_hull(prism)
+            m.unmerge_vertices()
+            m.vertex_normals = m.face_normals.repeat(3, axis=0)
+            m.visual = trimesh.visual.ColorVisuals(m, vertex_colors=np.tile(np.array(pattern_color, dtype=np.uint8), (len(m.vertices), 1)))
+            parts.append(m)
     elif pattern == "check":
-        cols, rows = 4, 3
+        cols, rows = 4, 5
         cw = torso_w / cols
-        ch = torso_h / rows
+        ch = torso_h * 0.82 / rows
         for r in range(rows):
             for c in range(cols):
                 if (r + c) % 2 == 1:
                     x = -torso_w / 2 + (c + 0.5) * cw
-                    z = torso_z - torso_h / 2 + (r + 0.5) * ch
+                    z = torso_z - torso_h * 0.41 + (r + 0.5) * ch
                     parts.append(box((cw - 0.015, cell_d, ch - 0.02), (x, y, z), pattern_color))
     return parts
 
 def build_person(shirt, pattern, pattern_color, hat_color):
     parts = []
 
-    # Legs
-    leg_w, leg_d, leg_h = 0.32, 0.32, 1.0
-    leg_gap = 0.05
-    parts.append(box((leg_w, leg_d, leg_h), (-(leg_w / 2 + leg_gap / 2), 0, leg_h / 2), PANTS))
-    parts.append(box((leg_w, leg_d, leg_h), ((leg_w / 2 + leg_gap / 2), 0, leg_h / 2), PANTS))
+    # Legs (cylinders)
+    leg_r, leg_h = 0.16, 1.0
+    leg_x = leg_r + 0.025
+    for side in (-1, 1):
+        parts.append(cylinder(leg_r, 0.05, leg_h + 0.05, (side * leg_x, 0), PANTS))
 
     # Shoes
     shoe_h = 0.14
-    parts.append(box((leg_w + 0.06, leg_d + 0.18, shoe_h), (-(leg_w / 2 + leg_gap / 2), 0.06, shoe_h / 2), SHOE))
-    parts.append(box((leg_w + 0.06, leg_d + 0.18, shoe_h), ((leg_w / 2 + leg_gap / 2), 0.06, shoe_h / 2), SHOE))
+    for side in (-1, 1):
+        parts.append(rounded_box((2 * leg_r + 0.06, 2 * leg_r + 0.18, shoe_h), (side * leg_x, 0.06, shoe_h / 2), SHOE, 0.06))
 
-    # Torso (shirt) - base block
+    # Torso (shirt) - rounded block, flat front/back for the pattern
     torso_w, torso_d, torso_h = 0.78, 0.42, 0.95
     torso_z = leg_h + torso_h / 2
-    parts.append(box((torso_w, torso_d, torso_h), (0, 0, torso_z), shirt))
+    torso_r = 0.12
+    parts.append(rounded_box((torso_w, torso_d, torso_h), (0, 0, torso_z), shirt, torso_r))
 
     # Hips block (slight taper base of torso)
     hem_h = 0.12
-    parts.append(box((torso_w + 0.04, torso_d + 0.04, hem_h), (0, 0, leg_h + hem_h / 2 - 0.02), shirt))
+    parts.append(rounded_box((torso_w + 0.04, torso_d + 0.04, hem_h), (0, 0, leg_h + hem_h / 2 - 0.02), shirt, 0.05))
 
     # Pattern tiles on both the front (+y, where the eyes are) and the back (-y)
     # of the torso, so people are distinguishable even when facing away.
+    # The pattern is kept to the flat part of the front/back faces, inside the rounded edges.
     if pattern is not None:
         cell_d = 0.02
-        parts.extend(pattern_parts(pattern, pattern_color, torso_w, torso_d, torso_h, torso_z, cell_d, +1))
-        parts.extend(pattern_parts(pattern, pattern_color, torso_w, torso_d, torso_h, torso_z, cell_d, -1))
+        pattern_w = torso_w - 2 * torso_r + 0.06
+        parts.extend(pattern_parts(pattern, pattern_color, pattern_w, torso_d, torso_h, torso_z, cell_d, +1))
+        parts.extend(pattern_parts(pattern, pattern_color, pattern_w, torso_d, torso_h, torso_z, cell_d, -1))
 
-    # Arms (short sleeve: shoulder portion shirt, forearm+hand skin)
-    sleeve_w, sleeve_d, sleeve_h = 0.26, 0.26, 0.28
-    arm_w, arm_d, arm_h = 0.22, 0.22, 0.55
-    shoulder_z = leg_h + torso_h - 0.15
-    arm_x = torso_w / 2 + arm_w / 2 - 0.02
+    # Arms: shoulder is a quarter cylinder (axis front-back) with rounded edges,
+    # rounding the top outer corner of the torso; forearm cylinder and sphere hand below.
+    shoulder_R, shoulder_edge = 0.36, 0.04
+    shoulder_x = 0.25
+    shoulder_z = leg_h + torso_h - 0.02 - shoulder_R
+    arm_r, arm_x = 0.11, 0.48
+    arc_R = shoulder_R - shoulder_edge
+    t = np.linspace(0, np.pi / 2, 12)
+    arc = [(shoulder_x + arc_R * np.cos(a), shoulder_z + arc_R * np.sin(a)) for a in t]
+    hand_r = 0.13
+    hand_z = 0.92
     for side in (-1, 1):
-        parts.append(box((sleeve_w, sleeve_d, sleeve_h), (side * arm_x, 0, shoulder_z - sleeve_h / 2), shirt))
-        forearm_z = shoulder_z - sleeve_h - arm_h / 2
-        parts.append(box((arm_w, arm_d, arm_h), (side * arm_x, 0, forearm_z), SKIN))
-        hand_size = 0.16
-        hand_z = forearm_z - arm_h / 2 - hand_size / 2
-        parts.append(box((hand_size, hand_size, hand_size), (side * arm_x, 0, hand_z), SKIN))
+        y = torso_d / 2 - 0.04 - shoulder_edge
+        core = [(side * x, sy * y, z) for sy in (-1, 1) for x, z in arc + [(shoulder_x, shoulder_z)]]
+
+        def closest(p, side=side, y=y):
+            # Nearest point of the core: the quarter disc (in x-z) times [-y, y].
+            x, z = side * p[:, 0] - shoulder_x, p[:, 2] - shoulder_z
+            a = np.clip(np.arctan2(z, x), 0, np.pi / 2)
+            r = np.minimum(np.hypot(x, z), arc_R)
+            qx, qz = r * np.cos(a), r * np.sin(a)
+            qx, qz = np.where(z < 0, np.clip(x, 0, arc_R), qx), np.where(z < 0, 0, qz)
+            qx, qz = np.where(x < 0, 0, qx), np.where(x < 0, np.clip(z, 0, arc_R), qz)
+            return np.column_stack([side * (qx + shoulder_x), np.clip(p[:, 1], -y, y), qz + shoulder_z])
+
+        parts.append(rounded_hull(core, shoulder_edge, shirt, segments=2, closest=closest))
+        parts.append(cylinder(arm_r, hand_z, shoulder_z + 0.05, (side * arm_x, 0), SKIN))
+        parts.append(sphere(hand_r, (side * arm_x, 0, hand_z), SKIN, segments=6))
 
     # Neck
-    neck_w, neck_h = 0.18, 0.12
-    neck_z = leg_h + torso_h + neck_h / 2
-    parts.append(box((neck_w, neck_w, neck_h), (0, 0, neck_z), SKIN))
+    neck_r, neck_h = 0.09, 0.14
+    neck_z0 = leg_h + torso_h - 0.04
+    parts.append(cylinder(neck_r, neck_z0, neck_z0 + neck_h, (0, 0), SKIN))
 
-    # Head
-    head_size = 0.42
-    head_z = neck_z + neck_h / 2 + head_size / 2
-    parts.append(box((head_size, head_size * 0.95, head_size), (0, 0, head_z), SKIN))
+    # Head (sphere)
+    head_r = 0.25
+    head_z = neck_z0 + neck_h + head_r - 0.08
+    parts.append(sphere(head_r, (0, 0, head_z), SKIN, segments=10))
 
-    # Hair cap (top slab)
-    hair_h = 0.10
-    hair_z = head_z + head_size / 2 - hair_h / 2 + 0.01
-    parts.append(box((head_size + 0.02, head_size * 0.95 + 0.02, hair_h), (0, 0, hair_z), HAIR))
+    # Hair: cap of a slightly larger sphere, reaching lower at the back (-y) than the front
+    hair_r = head_r + 0.02
+    parts.append(sphere(hair_r, (0, 0, head_z), HAIR, segments=10,
+                        cut=((0, -0.09 / hair_r, 1), -0.01)))
 
-    # Hat (optional cap with brim) on top of the hair
+    # Hat (optional): cap dome over the hair and a flat visor sticking out only
+    # at the front (a half ellipse starting inside the dome). The dome is a half
+    # ellipsoid whose widest point is its rim, so the sides go straight down to
+    # the rim, which is horizontal, just above the eyes and level with the
+    # visor's underside.
     if hat_color is not None:
-        head_top = head_z + head_size / 2
-        cap_h = 0.16
-        parts.append(box((head_size + 0.04, head_size * 0.95 + 0.04, cap_h), (0, 0, head_top + 0.02 + cap_h / 2), hat_color))
-        brim_h = 0.035
-        parts.append(box((head_size + 0.14, 0.24, brim_h), (0, 0.04, head_top - 0.02), hat_color))
+        brim_t = 0.017
+        brim_z, brim_y0, brim_w, brim_l = head_z + 0.09, 0.12, 0.21, 0.29
+        dome = sphere(1, (0, 0, 0), hat_color, segments=10, cut=((0, 0, 1), 0))
+        scale = np.array([head_r + 0.025, head_r + 0.025, 0.22])
+        normals = dome.vertex_normals / scale
+        dome = trimesh.Trimesh(dome.vertices * scale + (0, 0, brim_z - brim_t), dome.faces,
+                               vertex_normals=normals / np.linalg.norm(normals, axis=1, keepdims=True), process=False)
+        dome.visual = trimesh.visual.ColorVisuals(dome, vertex_colors=np.tile(np.array(hat_color, dtype=np.uint8), (len(dome.vertices), 1)))
+        parts.append(dome)
+        brim = [(brim_w * np.cos(a), brim_y0 + brim_l * np.sin(a), brim_z) for a in np.linspace(0, np.pi, 16)]
+        parts.append(rounded_hull(brim, brim_t, hat_color, segments=2))
 
-    # Eyes (small dark boxes on front face of head, front = +y direction)
-    head_d = head_size * 0.95
-    eye_size = 0.07
-    eye_z = head_z + 0.03
-    eye_x = head_size * 0.22
-    eye_y = head_d / 2 + 0.01
+    # Eyes (small dark spheres on the front of the head, front = +y direction)
+    eye_r = 0.04
     for side in (-1, 1):
-        parts.append(box((eye_size, 0.03, eye_size), (side * eye_x, eye_y, eye_z), EYE))
+        d = np.array([side * 0.36, 1, 0.12])
+        parts.append(sphere(eye_r, np.array((0, 0, head_z)) + (head_r - 0.015) * d / np.linalg.norm(d), EYE, segments=4))
 
     mesh = trimesh.util.concatenate(parts)
     # Center on origin in x, base at z=0 (Z-up authoring)
@@ -186,5 +315,5 @@ PERSONS = [
 
 for name, shirt, pattern, pattern_color, hat_color in PERSONS:
     mesh = build_person(shirt, pattern, pattern_color, hat_color)
-    mesh.export(f"../public/3dmodels/{name}.glb")
+    mesh.export(f"../public/3dmodels/{name}.glb", include_normals=True)
     print(f"Exported {name}.glb  bounds: {[round(v, 3) for v in mesh.bounds.flatten()]}  verts: {len(mesh.vertices)} faces: {len(mesh.faces)}")

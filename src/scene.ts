@@ -52,11 +52,12 @@ function makeLabelSprite(text: string): THREE.Sprite {
   const lines = text.split('\n');
   const lineH = 160;
   const pad = 32;
-  const W = 640;
+  const ctx = canvas.getContext('2d')!;
+  ctx.font = `bold ${lineH}px system-ui, sans-serif`;
+  const W = Math.max(640, Math.ceil(Math.max(...lines.map((ln) => ctx.measureText(ln).width))) + pad * 4);
   const H = pad * 2 + lineH * lines.length;
   canvas.width = W;
   canvas.height = H;
-  const ctx = canvas.getContext('2d')!;
   ctx.fillStyle = 'rgba(255,255,255,0.92)';
   ctx.fillRect(0, 0, W, H);
   ctx.strokeStyle = '#444444';
@@ -76,7 +77,7 @@ function makeLabelSprite(text: string): THREE.Sprite {
   const sprite = new THREE.Sprite(mat);
   sprite.userData.text = text;
   const aspect = W / H;
-  const w = 1.;
+  const w = W / 640;
   sprite.scale.set(w, w / aspect, 1);
   sprite.position.set(0, 3., 0);
   return sprite;
@@ -195,7 +196,7 @@ export class SceneController {
 
     const ground = new THREE.Mesh(
       new THREE.CircleGeometry(BOUND, 64),
-      new THREE.MeshLambertMaterial({ color: 0xe9e7e2 }),
+      new THREE.MeshLambertMaterial({ color: 0xd5e6bc }),
     );
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;

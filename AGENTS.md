@@ -48,6 +48,10 @@ Verify `lint` + `build` (and `tsc --noEmit`) after any source change.
   and hats (A/B/C only). Patterns are baked on **both** front and back of the torso:
   me/You plain, You diagonal stripes, family horizontal stripes, A vertical stripes, B polka dots,
   C check. Chest labels are runtime canvas sprites (`labelText` in models.ts), not baked.
+- People are built from round primitives in `make_person.py`: sphere head/hands/eyes, cylinder
+  legs/arms/neck, quarter-cylinder shoulders, and a rounded-box torso so the patterns sit on its flat
+  front/back. All come from `rounded_hull` (convex hull of spheres around core points) with exported
+  smooth normals; pattern tiles use `box` with flat normals.
 
 ## Regenerating models
 

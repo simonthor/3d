@@ -177,7 +177,7 @@ export const KIND_TEXT: Record<Lang, Record<KindId, KindText>> = {
     cake: { label: 'ケーキ', sub: '×2' },
   },
   en: {
-    me: { label: 'Me', sub: 'plain', labelText: 'Me' },
+    me: { label: 'Me', sub: 'plain', labelText: 'I/me' },
     you: { label: 'You', sub: 'diagonal stripes', labelText: 'You' },
     person_a: { label: 'A', sub: 'vertical stripes・hat', labelText: 'A' },
     person_b: { label: 'B', sub: 'polka dots・hat', labelText: 'B' },
@@ -192,8 +192,8 @@ export const KIND_TEXT: Record<Lang, Record<KindId, KindText>> = {
     cake: { label: 'Cake', sub: '×2' },
   },
   sv: {
-    me: { label: 'Jag', sub: 'enfärgad', labelText: 'Jag' },
-    you: { label: 'Du', sub: 'diagonalrandig', labelText: 'Du' },
+    me: { label: 'Jag', sub: 'enfärgad', labelText: 'Jag/mig' },
+    you: { label: 'Du', sub: 'diagonalrandig', labelText: 'Du/dig' },
     person_a: { label: 'A', sub: 'lodrätt randig・hatt', labelText: 'A' },
     person_b: { label: 'B', sub: 'prickig・hatt', labelText: 'B' },
     person_c: { label: 'C', sub: 'rutig・hatt', labelText: 'C' },
